@@ -35,12 +35,30 @@ https://localhost:8443
 
 ```
 kubectl -n kubernetes-dashboard patch svc kubernetes-dashboard-kong-proxy -p '{"spec": {"type": "NodePort"}}'
+
+```
+
+### Get the port via this cmd
+
+```
 kubectl -n kubernetes-dashboard get svc kubernetes-dashboard-kong-proxy
 ```
 
+### 30143 is NodePort
+
+```
+newcloud67@master-node:~$ kubectl -n kubernetes-dashboard get svc kubernetes-dashboard-kong-proxy
+NAME                              TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)         AGE
+kubernetes-dashboard-kong-proxy   NodePort   10.103.117.7   <none>        443:30143/TCP   10m
+newcloud67@master-node:~$ 
+```
+
+https://34.51.176.178:30143
 ### Access the DashBoard via 
 
-#### https://<your-vm-external-ip>:<NodePort>
+```
+https://<your-vm-external-ip>:<NodePort>
+```
 
 ## 6. Create admin-user ServiceAccount and ClusterRoleBinding for Dashboard access
 
