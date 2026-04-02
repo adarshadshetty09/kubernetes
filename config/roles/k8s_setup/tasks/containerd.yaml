@@ -1,13 +1,19 @@
-- name: Install containerd
+- name: Install required packages
   dnf:
-    name: containerd
+    name:
+      - yum-utils
+      - device-mapper-persistent-data
+      - lvm2
     state: present
 
-- name: Enable and start containerd
-  service:
-    name: containerd
-    state: started
-    enabled: yes
+- name: Add Docker repo
+  command: >
+    dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+- name: Install containerd
+  dnf:
+    name: containerd.io
+    state: present
 
 - name: Create containerd config dir
   file:
@@ -22,10 +28,11 @@
   args:
     creates: /etc/containerd/config.toml
 
-- name: Restart containerd
+- name: Enable and start containerd
   service:
     name: containerd
     state: restarted
+    enabled: yes
 
 - name: Disable swap
-  command: swapoff -a
+  command: swapoff -as
