@@ -1,3 +1,8 @@
+- name: Remove docker repo if exists
+  file:
+    path: /etc/yum.repos.d/docker-ce.repo
+    state: absent
+
 - name: Add CRI-O repo
   copy:
     dest: /etc/yum.repos.d/crio.repo
