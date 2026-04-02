@@ -2,7 +2,7 @@
   command: >
     kubeadm init
     --pod-network-cidr=192.168.0.0/16
-    --cri-socket=unix:///run/containerd/containerd.sock
+    --cri-socket=unix:///var/run/crio/crio.sock
   when: inventory_hostname in groups['master']
   args:
     creates: /etc/kubernetes/admin.conf
