@@ -1,8 +1,13 @@
 - name: Install containerd
-  apt:
+  dnf:
     name: containerd
     state: present
-    update_cache: yes
+
+- name: Enable and start containerd
+  service:
+    name: containerd
+    state: started
+    enabled: yes
 
 - name: Create containerd config dir
   file:
@@ -13,7 +18,6 @@
   shell: |
     containerd config default \
     | sed 's/SystemdCgroup = false/SystemdCgroup = true/' \
-    | sed 's|sandbox_image = ".*"|sandbox_image = "registry.k8s.io/pause:3.10"|' \
     > /etc/containerd/config.toml
   args:
     creates: /etc/containerd/config.toml

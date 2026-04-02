@@ -1,40 +1,24 @@
-- name: Install dependencies
-  apt:
-    name:
-      - apt-transport-https
-      - ca-certificates
-      - curl
-      - gpg
-    state: present
-    update_cache: yes
-
-- name: Create keyring dir
-  file:
-    path: /etc/apt/keyrings
-    state: directory
-    mode: '0755'
-
-- name: Add Kubernetes GPG key
-  shell: |
-    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key \
-    | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-  args:
-    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
 - name: Add Kubernetes repo
   copy:
-    dest: /etc/apt/sources.list.d/kubernetes.list
+    dest: /etc/yum.repos.d/kubernetes.repo
     content: |
-      deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /
+      [kubernetes]
+      name=Kubernetes
+      baseurl=https://pkgs.k8s.io/core:/stable:/v1.33/rpm/
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://pkgs.k8s.io/core:/stable:/v1.33/rpm/repodata/repomd.xml.key
 
-- name: Install kube packages
-  apt:
+- name: Install Kubernetes packages
+  dnf:
     name:
-      - kubelet=1.33.2-1.1
-      - kubeadm=1.33.2-1.1
-      - kubectl=1.33.2-1.1
+      - kubelet
+      - kubeadm
+      - kubectl
     state: present
-    update_cache: yes
 
-- name: Hold packages
-  command: apt-mark hold kubelet kubeadm kubectl
+- name: Enable kubelet
+  service:
+    name: kubelet
+    enabled: yes
+    state: started

@@ -4,3 +4,4 @@
 - include_tasks: sysctl.yaml
 - include_tasks: init.yaml
 - include_tasks: join.yaml
+- include_tasks: kernel.yaml
