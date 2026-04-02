@@ -1,6 +1,12 @@
-- name: Enable IP forwarding
+---
+# Configure sysctl parameters required for Kubernetes networking
+- name: Configure sysctl settings for Kubernetes
   ansible.posix.sysctl:
-    name: net.ipv4.ip_forward
-    value: '1'
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
     state: present
     reload: yes
+  loop:
+    - { name: net.ipv4.ip_forward, value: 1 }
+    - { name: net.bridge.bridge-nf-call-iptables, value: 1 }
+    - { name: net.bridge.bridge-nf-call-ip6tables, value: 1 }

@@ -1,8 +1,11 @@
+---
+# Remove old docker repo (safe cleanup)
 - name: Remove docker repo if exists
   file:
     path: /etc/yum.repos.d/docker-ce.repo
     state: absent
 
+# Add CRI-O repo (idempotent)
 - name: Add CRI-O repo
   copy:
     dest: /etc/yum.repos.d/crio.repo
@@ -12,17 +15,66 @@
       baseurl=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v1.33/rpm/
       enabled=1
       gpgcheck=0
+    mode: '0644'
 
+# Install CRI-O
 - name: Install CRI-O
   dnf:
     name: cri-o
     state: present
+    update_cache: yes
 
+# Ensure CRI-O is running
 - name: Enable and start CRI-O
   service:
     name: crio
     state: started
     enabled: yes
 
-- name: Disable swap
+# Verify CRI-O socket exists (important for kubeadm)
+- name: Wait for CRI-O socket
+  wait_for:
+    path: /var/run/crio/crio.sock
+    timeout: 30
+
+# Disable swap at runtime (only if enabled)
+- name: Disable swap (runtime)
   command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+# Disable swap permanently (IMPORTANT)
+- name: Disable swap permanently
+  replace:
+    path: /etc/fstab
+    regexp: '^\S+\s+\S+\s+swap\s+'
+    replace: '# &'
+
+# Ensure SELinux is permissive (required for CRI-O + k8s)
+- name: Set SELinux to permissive
+  selinux:
+    policy: targeted
+    state: permissive
+
+# Load required kernel module
+- name: Load br_netfilter module
+  modprobe:
+    name: br_netfilter
+    state: present
+
+# Persist kernel module
+- name: Persist br_netfilter module
+  copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: |
+      br_netfilter
+
+# Set required sysctl params
+- name: Configure sysctl for Kubernetes
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop:
+    - { name: net.bridge.bridge-nf-call-iptables, value: 1 }
+    - { name: net.ipv4.ip_forward, value: 1 }

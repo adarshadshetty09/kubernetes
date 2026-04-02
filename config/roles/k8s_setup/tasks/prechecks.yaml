@@ -1,0 +1,25 @@
+---
+- name: Disable SELinux
+  selinux:
+    state: permissive
+
+- name: Ensure required packages exist
+  dnf:
+    name:
+      - curl
+      - wget
+      - tar
+    state: present
+
+- name: Open required Kubernetes ports
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+  loop:
+    - 6443/tcp
+    - 10250/tcp
+    - 10257/tcp
+    - 10259/tcp
+    - 2379-2380/tcp
+  notify: reload firewalld

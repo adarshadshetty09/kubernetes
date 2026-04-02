@@ -1,33 +1,77 @@
+---
+# Check if cluster already initialized
+- name: Check if Kubernetes is initialized
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: k8s_init_check
+
+# Initialize cluster (only once)
 - name: Initialize Kubernetes cluster
   command: >
     kubeadm init
     --pod-network-cidr=192.168.0.0/16
     --cri-socket=unix:///var/run/crio/crio.sock
-  when: inventory_hostname in groups['master']
-  args:
-    creates: /etc/kubernetes/admin.conf
+  when:
+    - inventory_hostname in groups['master']
+    - not k8s_init_check.stat.exists
   register: kubeadm_output
+  retries: 2
+  delay: 10
+  until: kubeadm_output.rc == 0
 
-# Setup kubeconfig
-- name: Setup kubeconfig for kubectl
-  shell: |
-    mkdir -p $HOME/.kube
-    cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
-    chown $(id -u):$(id -g) $HOME/.kube/config
+# Ensure kubeconfig directory exists
+- name: Create .kube directory
+  file:
+    path: /home/ansible/.kube
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: '0755'
   when: inventory_hostname in groups['master']
 
-# Generate join command
+# Copy kubeconfig (idempotent)
+- name: Copy kubeconfig
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/ansible/.kube/config
+    remote_src: yes
+    owner: ansible
+    group: ansible
+    mode: '0644'
+  when: inventory_hostname in groups['master']
+
+# Wait for API server to be ready
+- name: Wait for Kubernetes API
+  wait_for:
+    host: "{{ ansible_host }}"
+    port: 6443
+    timeout: 120
+  when: inventory_hostname in groups['master']
+
+# Generate join command (always fresh but safe)
 - name: Get join command
   command: kubeadm token create --print-join-command
-  when: inventory_hostname in groups['master']
   register: join_cmd
+  changed_when: false
+  when: inventory_hostname in groups['master']
 
+# Share join command across hosts
 - name: Set join command fact
   set_fact:
     kube_join_cmd: "{{ join_cmd.stdout }}"
   when: inventory_hostname in groups['master']
 
-# Install Calico (ONLY ON MASTER)
+# Check if Calico is already installed
+- name: Check if Calico is installed
+  command: kubectl get daemonset calico-node -n kube-system
+  register: calico_check
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname in groups['master']
+
+# Install Calico only if not present
 - name: Install Calico CNI
   command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
-  when: inventory_hostname in groups['master']
+  when:
+    - inventory_hostname in groups['master']
+    - calico_check.rc != 0

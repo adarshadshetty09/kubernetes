@@ -1,2 +1,6 @@
 ---
 # handlers file for kubernetes_cluster
+- name: reload firewalld
+  service:
+    name: firewalld
+    state: reloaded

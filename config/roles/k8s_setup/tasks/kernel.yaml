@@ -1,16 +1,26 @@
+---
+# Load kernel module immediately
 - name: Load br_netfilter module
   modprobe:
     name: br_netfilter
     state: present
 
-- name: Enable bridge-nf-call-iptables
-  sysctl:
-    name: net.bridge.bridge-nf-call-iptables
-    value: 1
-    state: present
+# Persist kernel module across reboot
+- name: Persist br_netfilter module
+  copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: |
+      br_netfilter
+    mode: '0644'
 
-- name: Enable IP forwarding
-  sysctl:
-    name: net.ipv4.ip_forward
-    value: 1
+# Ensure required sysctl settings for Kubernetes networking
+- name: Configure sysctl for Kubernetes
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
     state: present
+    reload: yes
+  loop:
+    - { name: net.bridge.bridge-nf-call-iptables, value: 1 }
+    - { name: net.bridge.bridge-nf-call-ip6tables, value: 1 }
+    - { name: net.ipv4.ip_forward, value: 1 }

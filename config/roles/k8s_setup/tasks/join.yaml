@@ -1,5 +1,34 @@
-- name: Join worker nodes
+---
+# Check if node already joined cluster
+- name: Check if node already joined
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: node_joined
+
+# Wait for join command from master
+- name: Wait for join command to be available
+  wait_for:
+    timeout: 30
+  when:
+    - inventory_hostname in groups['workers']
+    - hostvars[groups['master'][0]].kube_join_cmd is not defined
+
+# Join worker node to cluster
+- name: Join worker node
   command: "{{ hostvars[groups['master'][0]].kube_join_cmd }}"
-  when: inventory_hostname in groups['workers']
-  args:
-    creates: /etc/kubernetes/kubelet.conf
+  when:
+    - inventory_hostname in groups['workers']
+    - not node_joined.stat.exists
+    - hostvars[groups['master'][0]].kube_join_cmd is defined
+  register: join_result
+  retries: 3
+  delay: 10
+  until: join_result.rc == 0
+
+# Debug output (optional but useful in prod)
+- name: Debug join result
+  debug:
+    var: join_result.stdout
+  when:
+    - inventory_hostname in groups['workers']
+    - join_result is defined

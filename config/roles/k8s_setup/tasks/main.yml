@@ -1,7 +1,48 @@
 ---
-- include_tasks: containerd.yaml
-- include_tasks: kubernetes.yaml
-- include_tasks: sysctl.yaml
-- include_tasks: init.yaml
-- include_tasks: join.yaml
-- include_tasks: kernel.yaml
+# ========================
+# Prechecks (ALL nodes)
+# ========================
+- name: Run prechecks
+  include_tasks: prechecks.yaml
+  tags: prechecks
+
+# ========================
+# Runtime setup (ALL nodes)
+# ========================
+- name: Setup CRI-O runtime
+  include_tasks: containerd.yaml
+  tags: runtime
+
+# ========================
+# Kernel + networking
+# ========================
+- name: Configure kernel modules
+  include_tasks: kernel.yaml
+  tags: kernel
+
+- name: Configure sysctl
+  include_tasks: sysctl.yaml
+  tags: sysctl
+
+# ========================
+# Kubernetes packages
+# ========================
+- name: Install Kubernetes components
+  include_tasks: kubernetes.yaml
+  tags: k8s-packages
+
+# ========================
+# MASTER ONLY
+# ========================
+- name: Initialize control plane
+  include_tasks: init.yaml
+  when: inventory_hostname in groups['master']
+  tags: master
+
+# ========================
+# WORKERS ONLY
+# ========================
+- name: Join worker nodes
+  include_tasks: join.yaml
+  when: inventory_hostname in groups['workers']
+  tags: workers

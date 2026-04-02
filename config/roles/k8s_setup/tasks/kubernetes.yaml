@@ -1,3 +1,5 @@
+---
+# Add Kubernetes repo (idempotent)
 - name: Add Kubernetes repo
   copy:
     dest: /etc/yum.repos.d/kubernetes.repo
@@ -8,17 +10,33 @@
       enabled=1
       gpgcheck=1
       gpgkey=https://pkgs.k8s.io/core:/stable:/v1.33/rpm/repodata/repomd.xml.key
+      exclude=kubelet kubeadm kubectl
+    mode: '0644'
 
-- name: Install Kubernetes packages
+# Install specific Kubernetes version (IMPORTANT for prod)
+- name: Install Kubernetes packages (version pinned)
   dnf:
     name:
-      - kubelet
-      - kubeadm
-      - kubectl
+      - kubelet-1.33.10
+      - kubeadm-1.33.10
+      - kubectl-1.33.10
     state: present
+    disable_excludes: kubernetes
+    update_cache: yes
 
-- name: Enable kubelet
+# Ensure kubelet is enabled but DO NOT start prematurely
+- name: Enable kubelet service
   service:
     name: kubelet
     enabled: yes
     state: started
+
+# Wait for kubelet to be active
+- name: Wait for kubelet to be ready
+  systemd:
+    name: kubelet
+    state: started
+  register: kubelet_status
+  retries: 3
+  delay: 5
+  until: kubelet_status is success
