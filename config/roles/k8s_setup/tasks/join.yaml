@@ -1,0 +1,5 @@
+- name: Join worker nodes
+  command: "{{ hostvars[groups['master'][0]].kube_join_cmd }}"
+  when: inventory_hostname in groups['workers']
+  args:
+    creates: /etc/kubernetes/kubelet.conf

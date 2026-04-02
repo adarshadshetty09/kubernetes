@@ -1,0 +1,6 @@
+---
+- include_tasks: containerd.yaml
+- include_tasks: kubernetes.yaml
+- include_tasks: sysctl.yaml
+- include_tasks: init.yaml
+- include_tasks: join.yaml

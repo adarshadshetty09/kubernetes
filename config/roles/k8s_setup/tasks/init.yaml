@@ -1,0 +1,33 @@
+- name: Initialize Kubernetes cluster
+  command: >
+    kubeadm init
+    --pod-network-cidr=192.168.0.0/16
+    --cri-socket=unix:///run/containerd/containerd.sock
+  when: inventory_hostname in groups['master']
+  args:
+    creates: /etc/kubernetes/admin.conf
+  register: kubeadm_output
+
+# Setup kubeconfig
+- name: Setup kubeconfig for kubectl
+  shell: |
+    mkdir -p $HOME/.kube
+    cp -f /etc/kubernetes/admin.conf $HOME/.kube/config
+    chown $(id -u):$(id -g) $HOME/.kube/config
+  when: inventory_hostname in groups['master']
+
+# Generate join command
+- name: Get join command
+  command: kubeadm token create --print-join-command
+  when: inventory_hostname in groups['master']
+  register: join_cmd
+
+- name: Set join command fact
+  set_fact:
+    kube_join_cmd: "{{ join_cmd.stdout }}"
+  when: inventory_hostname in groups['master']
+
+# Install Calico (ONLY ON MASTER)
+- name: Install Calico CNI
+  command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
+  when: inventory_hostname in groups['master']
