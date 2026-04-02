@@ -1,38 +1,23 @@
-- name: Install required packages
+- name: Add CRI-O repo
+  copy:
+    dest: /etc/yum.repos.d/crio.repo
+    content: |
+      [cri-o]
+      name=CRI-O
+      baseurl=https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v1.33/rpm/
+      enabled=1
+      gpgcheck=0
+
+- name: Install CRI-O
   dnf:
-    name:
-      - yum-utils
-      - device-mapper-persistent-data
-      - lvm2
+    name: cri-o
     state: present
 
-- name: Add Docker repo
-  command: >
-    dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-
-- name: Install containerd
-  dnf:
-    name: containerd.io
-    state: present
-
-- name: Create containerd config dir
-  file:
-    path: /etc/containerd
-    state: directory
-
-- name: Generate containerd config
-  shell: |
-    containerd config default \
-    | sed 's/SystemdCgroup = false/SystemdCgroup = true/' \
-    > /etc/containerd/config.toml
-  args:
-    creates: /etc/containerd/config.toml
-
-- name: Enable and start containerd
+- name: Enable and start CRI-O
   service:
-    name: containerd
-    state: restarted
+    name: crio
+    state: started
     enabled: yes
 
 - name: Disable swap
-  command: swapoff -as
+  command: swapoff -a
