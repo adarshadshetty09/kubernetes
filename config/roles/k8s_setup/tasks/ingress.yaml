@@ -20,8 +20,7 @@
 # Wait for ingress controller to be ready
 - name: Wait for ingress controller pods
   command: >
-    kubectl wait --namespace ingress-nginx
-    --for=condition=Ready pods --all --timeout=300s
+     kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=300s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   when: inventory_hostname in groups['master']
