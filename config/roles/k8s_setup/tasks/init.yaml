@@ -64,6 +64,8 @@
 # Check if Calico is already installed
 - name: Check if Calico is installed
   command: kubectl get daemonset calico-node -n kube-system
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_check
   changed_when: false
   failed_when: false
@@ -72,6 +74,17 @@
 # Install Calico only if not present
 - name: Install Calico CNI
   command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   when:
     - inventory_hostname in groups['master']
     - calico_check.rc != 0
+
+#  ADD HERE (RIGHT AFTER CALICO)
+
+- name: Wait for nodes using kubectl wait
+  command: >
+    kubectl wait --for=condition=Ready nodes --all --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: inventory_hostname in groups['master']

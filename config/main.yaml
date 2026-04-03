@@ -1,5 +1,7 @@
 - name: Setup Kubernetes Cluster
   hosts: all
   become: yes
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   roles:
     - k8s_setup
