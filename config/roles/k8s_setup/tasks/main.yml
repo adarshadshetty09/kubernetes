@@ -46,3 +46,11 @@
   include_tasks: join.yaml
   when: inventory_hostname in groups['workers']
   tags: workers
+
+# ========================
+# INGRESS (MASTER ONLY)
+# ========================
+- name: Setup Ingress Controller and Resource
+  include_tasks: ingress.yaml
+  when: inventory_hostname in groups['master']
+  tags: ingress

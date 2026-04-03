@@ -1,0 +1,58 @@
+---
+# Add check before install:
+- name: Check if ingress controller exists
+  command: kubectl get ns ingress-nginx
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: ingress_ns
+  failed_when: false
+  changed_when: false
+
+
+# Install NGINX Ingress Controller
+- name: Install NGINX Ingress Controller
+  command: >
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: inventory_hostname in groups['master']
+
+# Wait for ingress controller to be ready
+- name: Wait for ingress controller pods
+  command: >
+    kubectl wait --namespace ingress-nginx
+    --for=condition=Ready pods --all --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: inventory_hostname in groups['master']
+
+# Create ingress resource file
+- name: Create ingress yaml file
+  copy:
+    dest: /tmp/nginx-ingress.yaml
+    content: |
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: nginx-ingress
+      spec:
+        ingressClassName: nginx
+        rules:
+        - host: myapp.local
+          http:
+            paths:
+            - path: /
+              pathType: Prefix
+              backend:
+                service:
+                  name: nginx
+                  port:
+                    number: 80
+  when: inventory_hostname in groups['master']
+
+# Apply ingress
+- name: Apply ingress resource
+  command: kubectl apply -f /tmp/nginx-ingress.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  when: inventory_hostname in groups['master']
