@@ -1,6 +1,7 @@
 ---
-- name: Disable SELinux
+- name: Set SELinux to permissive
   selinux:
+    policy: targeted
     state: permissive
 
 - name: Ensure required packages exist
