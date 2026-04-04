@@ -3,6 +3,7 @@
   become: yes
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
+    PATH: "/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"
   roles:
     # - k8s_setup
     - k8s_dashboard
