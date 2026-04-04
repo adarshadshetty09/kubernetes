@@ -65,7 +65,7 @@ kubernetes_clusters_project = {
 
 kubernetes_clusters_project_config = {
   "ansible-master-node" = {
-    enable_external_ip                 = false
+    enable_external_ip                 = true
     enable_shielded_vm                 = true
     machine_name                       = "ansible-master-node"
     instance_count                     = 1
@@ -101,7 +101,7 @@ kubernetes_clusters_project_config = {
   "10.0.0.16",
 ]
     region                             = "us-south1"
-    machine_type                       = "e2-small"
+    machine_type                       = "n2-standard-4"
     vm_deletion_protection             = false
     network_tags                       = ["yugabyte","allow-ssh","k8s"]
     network                            = "vpc-yugabyte-terraform-cluster"

@@ -1,0 +1,78 @@
+- name: Install and Setup Jenkins on RHEL
+  hosts: localhost
+  become: yes
+
+  vars:
+    jenkins_port: 8080
+
+  tasks:
+
+    # 🔥  FIX: remove broken repo
+    - name: Remove broken HashiCorp repo
+      file:
+        path: /etc/yum.repos.d/hashicorp.repo
+        state: absent
+      ignore_errors: yes
+
+    # 🔥  Clean cache
+    - name: Clean dnf cache
+      command: dnf clean all
+
+    # ✅  Install required packages
+    - name: Install required packages
+      dnf:
+        name:
+          - wget
+          - curl
+          - git
+          - fontconfig
+          - java-21-openjdk
+        state: present
+
+    # ✅  Add Jenkins repo
+    - name: Add Jenkins repository
+      get_url:
+        url: https://pkg.jenkins.io/rpm-stable/jenkins.repo
+        dest: /etc/yum.repos.d/jenkins.repo
+
+    - name: Import Jenkins GPG key
+      rpm_key:
+        state: present
+        key: https://pkg.jenkins.io/rpm-stable/jenkins.io-2023.key
+
+    # ✅  Install Jenkins
+    - name: Install Jenkins
+      dnf:
+        name: jenkins
+        state: present
+
+    # ✅  Reload systemd
+    - name: Reload systemd
+      command: systemctl daemon-reexec
+
+    # ✅  Enable Jenkins
+    - name: Enable Jenkins
+      systemd:
+        name: jenkins
+        enabled: yes
+
+    # ✅  Start Jenkins
+    - name: Start Jenkins
+      systemd:
+        name: jenkins
+        state: started
+
+    # ✅  Open firewall
+    - name: Open Jenkins port
+      firewalld:
+        port: "{{ jenkins_port }}/tcp"
+        permanent: yes
+        state: enabled
+        immediate: yes
+      ignore_errors: yes
+
+    # ✅  Output
+    - name: Show Jenkins URL
+      debug:
+        msg: "Jenkins URL: http://{{ ansible_host }}:{{ jenkins_port }}"
+~                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
