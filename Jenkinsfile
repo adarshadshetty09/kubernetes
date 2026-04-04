@@ -1,7 +1,5 @@
 pipeline {
 agent any
-
-```
 environment {
     ANSIBLE_HOST_KEY_CHECKING = 'False'
 }
@@ -10,7 +8,7 @@ stages {
 
     stage('Initialize') {
         steps {
-            echo '🚀 Starting Kubernetes CI/CD Pipeline...'
+            echo 'Starting Kubernetes CI/CD Pipeline...'
         }
     }
 
@@ -26,7 +24,7 @@ stages {
         steps {
             dir('config') {
                 sh '''
-                echo "📌 Checking inventory..."
+                echo "Checking inventory..."
                 cat inventory.ini
                 '''
             }
@@ -37,7 +35,7 @@ stages {
         steps {
             dir('config') {
                 sh '''
-                echo "⚙️ Setting up Kubernetes cluster..."
+                echo "Setting up Kubernetes cluster..."
                 ansible-playbook -i inventory.ini k8s_setup.yaml
                 '''
             }
@@ -48,7 +46,7 @@ stages {
         steps {
             dir('config') {
                 sh '''
-                echo "📊 Deploying Kubernetes Dashboard..."
+                echo "Deploying Kubernetes Dashboard..."
                 ansible-playbook -i inventory.ini k8s_dashboard.yaml
                 '''
             }
@@ -59,7 +57,7 @@ stages {
         steps {
             dir('config') {
                 sh '''
-                echo "🌐 Installing NGINX Ingress Controller..."
+                echo "Installing NGINX Ingress Controller..."
                 ansible-playbook -i inventory.ini ingress-setup.yaml
                 '''
             }
@@ -70,7 +68,7 @@ stages {
         steps {
             dir('config') {
                 sh '''
-                echo "🔍 Verifying cluster resources..."
+                echo "Verifying cluster resources..."
 
                 kubectl get nodes
                 kubectl get pods -A
@@ -83,19 +81,19 @@ stages {
 
     stage('Complete') {
         steps {
-            echo '✅ Kubernetes + Dashboard + Ingress setup completed successfully 🚀'
+            echo 'Kubernetes + Dashboard + Ingress setup completed successfully'
         }
     }
 }
 
 post {
     success {
-        echo '🎉 Pipeline executed successfully!'
+        echo 'Pipeline executed successfully!'
     }
     failure {
-        echo '❌ Pipeline failed. Check logs above.'
+        echo 'Pipeline failed. Check logs above.'
     }
 }
-```
+
 
 }
