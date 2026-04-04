@@ -13,6 +13,22 @@ pipeline {
             }
         }
 
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                sudo dnf install -y ansible-core git wget vim nano tar unzip
+                '''
+            }
+        }
+
+        stage('Install Ansible Collections') {
+            steps {
+                sh '''
+                ansible-galaxy collection install ansible.posix community.general --upgrade
+                '''
+            }
+        }
+
         stage('Test') {
             steps {
                 sh 'echo "I am exist"'
@@ -21,19 +37,21 @@ pipeline {
 
         stage('Run Kubernetes Setup') {
             steps {
-                sh '''
-                cd config
-                ansible-playbook -i inventory.ini k8s_setup.yaml
-                '''
+                dir('config') {
+                    sh '''
+                    ansible-playbook -i inventory.ini k8s_setup.yaml
+                    '''
+                }
             }
         }
 
         stage('Deploy Dashboard') {
             steps {
-                sh '''
-                cd config
-                ansible-playbook -i inventory.ini k8s_dashboard.yaml
-                '''
+                dir('config') {
+                    sh '''
+                    ansible-playbook -i inventory.ini k8s_dashboard.yaml
+                    '''
+                }
             }
         }
 
