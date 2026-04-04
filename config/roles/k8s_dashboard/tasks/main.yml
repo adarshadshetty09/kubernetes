@@ -33,34 +33,17 @@
   delay: 6
   until: api_check.rc == 0
 
-# ✅ Clean old/broken repo
-- name: Remove existing dashboard repo (if any)
-  command: helm repo remove kubernetes-dashboard
-  ignore_errors: yes
-
-# ✅ Add repo fresh
-- name: Add Kubernetes Dashboard repo
-  command: helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
-
-# ✅ Update repo with retry
-- name: Update Helm repo
-  command: helm repo update
-  register: helm_update
-  retries: 3
-  delay: 5
-  until: helm_update.rc == 0
-
-# ✅ Install Dashboard
-- name: Install Kubernetes Dashboard
+# ✅ Install Dashboard using OCI (FIXED)
+- name: Install Kubernetes Dashboard (OCI)
   command: >
-    helm upgrade --install {{ dashboard_release_name }}
-    {{ dashboard_chart }}
+    helm upgrade --install kubernetes-dashboard
+    oci://registry.k8s.io/dashboard/kubernetes-dashboard
     --namespace {{ dashboard_namespace }}
     --create-namespace
     --wait
     --timeout 5m
 
-# ✅ Wait for pods to be ready (robust)
+# ✅ Wait for pods
 - name: Wait for dashboard pods
   shell: kubectl get pods -n {{ dashboard_namespace }} --no-headers
   register: pod_status
@@ -74,7 +57,7 @@
   register: svc_type
   failed_when: false
 
-# ✅ Patch service to NodePort safely
+# ✅ Patch to NodePort
 - name: Patch dashboard service to NodePort
   command: >
     kubectl -n {{ dashboard_namespace }}
@@ -84,7 +67,7 @@
     - svc_type.stdout is defined
     - svc_type.stdout != "NodePort"
 
-# ✅ Get NodePort with retry
+# ✅ Get NodePort safely
 - name: Get NodePort
   shell: kubectl -n {{ dashboard_namespace }} get svc kubernetes-dashboard-kong-proxy -o jsonpath='{.spec.ports[0].nodePort}'
   register: nodeport
@@ -124,7 +107,7 @@
   command: kubectl -n {{ dashboard_namespace }} create token admin-user
   register: dashboard_token
 
-# ✅ Output access details
+# ✅ Output
 - name: Show Dashboard URL
   debug:
     msg:
