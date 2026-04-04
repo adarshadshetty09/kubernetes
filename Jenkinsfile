@@ -22,7 +22,7 @@ pipeline {
         stage('Run Kubernetes Setup') {
             steps {
                 sh '''
-                cd kubernetes/config
+                cd config
                 ansible-playbook -i inventory.ini k8s_setup.yaml
                 '''
             }
@@ -31,7 +31,7 @@ pipeline {
         stage('Deploy Dashboard') {
             steps {
                 sh '''
-                cd kubernetes/config
+                cd config
                 ansible-playbook -i inventory.ini k8s_dashboard.yaml
                 '''
             }
