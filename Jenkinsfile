@@ -13,11 +13,5 @@ pipeline {
                 sh 'echo "I am exist"'
             }
         }
-
-        stage('Complete') {
-            steps {
-                echo 'Pipeline completed successfully'
-            }
-        }
     }
 }
