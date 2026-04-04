@@ -1,7 +1,8 @@
 - name: Check if helm exists
   command: helm version
   register: helm_check
-  ignore_errors: yes
+  failed_when: false
+  changed_when: false
 
 - name: Install required packages for Helm
   package:
@@ -24,7 +25,7 @@
   command: /tmp/get_helm.sh
   when: helm_check.rc != 0
 
-#  Wait for cluster ready
+# ✅ Wait for Kubernetes API
 - name: Wait for Kubernetes API
   command: kubectl get nodes
   register: api_check
@@ -32,18 +33,24 @@
   delay: 6
   until: api_check.rc == 0
 
-#  Helm repo setup (fixed)
-- name: Ensure Helm repo is added
-  shell: |
-    helm repo list | grep kubernetes-dashboard || \
-    helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
-  register: repo_result
-  changed_when: "'has been added' in repo_result.stdout"
+# ✅ Clean old/broken repo
+- name: Remove existing dashboard repo (if any)
+  command: helm repo remove kubernetes-dashboard
+  ignore_errors: yes
 
+# ✅ Add repo fresh
+- name: Add Kubernetes Dashboard repo
+  command: helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
+
+# ✅ Update repo with retry
 - name: Update Helm repo
   command: helm repo update
+  register: helm_update
+  retries: 3
+  delay: 5
+  until: helm_update.rc == 0
 
-#  Install dashboard
+# ✅ Install Dashboard
 - name: Install Kubernetes Dashboard
   command: >
     helm upgrade --install {{ dashboard_release_name }}
@@ -53,17 +60,21 @@
     --wait
     --timeout 5m
 
-#  Wait for dashboard pods
+# ✅ Wait for pods to be ready (robust)
 - name: Wait for dashboard pods
-  command: kubectl rollout status deployment/kubernetes-dashboard -n {{ dashboard_namespace }} --timeout=300s
+  shell: kubectl get pods -n {{ dashboard_namespace }} --no-headers
+  register: pod_status
+  retries: 10
+  delay: 10
+  until: "'Running' in pod_status.stdout"
 
-#  Check service AFTER install
+# ✅ Check service type
 - name: Check service type
   shell: kubectl -n {{ dashboard_namespace }} get svc kubernetes-dashboard-kong-proxy -o jsonpath='{.spec.type}'
   register: svc_type
   failed_when: false
 
-#  Patch safely
+# ✅ Patch service to NodePort safely
 - name: Patch dashboard service to NodePort
   command: >
     kubectl -n {{ dashboard_namespace }}
@@ -73,12 +84,15 @@
     - svc_type.stdout is defined
     - svc_type.stdout != "NodePort"
 
-#  Get NodePort
+# ✅ Get NodePort with retry
 - name: Get NodePort
   shell: kubectl -n {{ dashboard_namespace }} get svc kubernetes-dashboard-kong-proxy -o jsonpath='{.spec.ports[0].nodePort}'
   register: nodeport
+  retries: 5
+  delay: 5
+  until: nodeport.stdout != ""
 
-#  RBAC
+# ✅ Create admin user
 - name: Apply admin user
   copy:
     dest: /tmp/dashboard-admin.yaml
@@ -105,12 +119,12 @@
 - name: Apply RBAC
   command: kubectl apply -f /tmp/dashboard-admin.yaml
 
-#  Token
+# ✅ Generate token
 - name: Generate dashboard token
   command: kubectl -n {{ dashboard_namespace }} create token admin-user
   register: dashboard_token
 
-#  Output
+# ✅ Output access details
 - name: Show Dashboard URL
   debug:
     msg:
