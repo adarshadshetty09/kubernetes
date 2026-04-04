@@ -33,16 +33,15 @@
   delay: 6
   until: api_check.rc == 0
 
-# ✅ Install Dashboard using OCI (FIXED)
 - name: Install Kubernetes Dashboard (OCI)
   command: >
     helm upgrade --install kubernetes-dashboard
     oci://registry.k8s.io/dashboard/kubernetes-dashboard
+    --version 7.5.0
     --namespace {{ dashboard_namespace }}
     --create-namespace
     --wait
     --timeout 5m
-
 # ✅ Wait for pods
 - name: Wait for dashboard pods
   shell: kubectl get pods -n {{ dashboard_namespace }} --no-headers
