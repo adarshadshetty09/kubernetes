@@ -22,7 +22,11 @@ kubernetes_clusters_project = {
     enable_wal1_disk_snapshot_attach   = false
     enable_shared_disk_snapshot_attach = false
     attached_persistent_disk_sizes     = []
-    machine_zone                       = ["northamerica-northeast1-a","northamerica-northeast1-b","northamerica-northeast1-c"]
+    machine_zone = [
+  "us-south1-a",
+  "us-south1-b",
+  "us-south1-c"
+]
     policy_name                        = "kubectl-snapshot"
     utc_time                           = "00:00"
     retention_days                     = 7
@@ -39,7 +43,7 @@ kubernetes_clusters_project = {
   "10.0.0.17",
   "10.0.0.18"
 ]
-    region                             = "northamerica-northeast1"
+    region                             = "us-south1"
     machine_type                       = "n2-standard-4"
     vm_deletion_protection             = false
     network_tags                       = ["yugabyte","allow-ssh","k8s"]
@@ -76,7 +80,11 @@ kubernetes_clusters_project_config = {
     enable_wal1_disk_snapshot_attach   = false
     enable_shared_disk_snapshot_attach = false
     attached_persistent_disk_sizes     = []
-    machine_zone                       = ["northamerica-northeast1-a","northamerica-northeast1-b","northamerica-northeast1-c"]
+    machine_zone = [
+  "us-south1-a",
+  "us-south1-b",
+  "us-south1-c"
+]
     policy_name                        = "ansible-snapshot-policy-monitor"
     utc_time                           = "00:00"
     retention_days                     = 7
@@ -92,7 +100,7 @@ kubernetes_clusters_project_config = {
     internal_ip = [
   "10.0.0.16",
 ]
-    region                             = "northamerica-northeast1"
+    region                             = "us-south1"
     machine_type                       = "e2-small"
     vm_deletion_protection             = false
     network_tags                       = ["yugabyte","allow-ssh","k8s"]

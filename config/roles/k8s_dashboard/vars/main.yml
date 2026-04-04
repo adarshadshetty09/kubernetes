@@ -1,2 +1,5 @@
 ---
 # vars file for k8s_dashboard
+dashboard_namespace: kubernetes-dashboard
+dashboard_release_name: kubernetes-dashboard
+dashboard_chart: kubernetes-dashboard/kubernetes-dashboard

@@ -1,2 +1,74 @@
----
-# tasks file for k8s_dashboard
+- name: Check if helm exists
+  command: helm version
+  register: helm_check
+  ignore_errors: yes
+
+- name: Download Helm install script
+  get_url:
+    url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+    dest: /tmp/get_helm.sh
+    mode: '0755'
+  when: helm_check.rc != 0
+
+- name: Install Helm
+  command: /tmp/get_helm.sh
+  when: helm_check.rc != 0
+
+- name: Add Kubernetes Dashboard repo
+  shell: helm repo list | grep kubernetes-dashboard || helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
+
+- name: Update Helm repo
+  command: helm repo update
+
+- name: Install Kubernetes Dashboard
+  command: >
+    helm upgrade --install {{ dashboard_release_name }}
+    {{ dashboard_chart }}
+    --namespace {{ dashboard_namespace }}
+    --create-namespace
+    --wait
+
+- name: Check service type
+  shell: kubectl -n {{ dashboard_namespace }} get svc kubernetes-dashboard-kong-proxy -o jsonpath='{.spec.type}'
+  register: svc_type
+
+- name: Patch dashboard service to NodePort
+  command: >
+    kubectl -n {{ dashboard_namespace }}
+    patch svc kubernetes-dashboard-kong-proxy
+    -p '{"spec": {"type": "NodePort"}}'
+  when: svc_type.stdout != "NodePort"
+
+- name: Get NodePort
+  shell: kubectl -n {{ dashboard_namespace }} get svc kubernetes-dashboard-kong-proxy -o jsonpath='{.spec.ports[0].nodePort}'
+  register: nodeport
+
+- name: Apply admin user
+  copy:
+    dest: /tmp/dashboard-admin.yaml
+    content: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: admin-user
+        namespace: {{ dashboard_namespace }}
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: admin-user
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cluster-admin
+      subjects:
+      - kind: ServiceAccount
+        name: admin-user
+        namespace: {{ dashboard_namespace }}
+
+- name: Apply RBAC
+  command: kubectl apply -f /tmp/dashboard-admin.yaml
+
+- name: Show Dashboard URL
+  debug:
+    msg: "Dashboard URL: https://{{ ansible_host }}:{{ nodeport.stdout }}"
