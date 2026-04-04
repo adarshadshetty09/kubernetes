@@ -1,0 +1,33 @@
+- name: Verify Kubernetes Cluster
+  hosts: master
+  become: yes
+
+  tasks:
+
+    - name: Get Nodes
+      command: kubectl get nodes
+      register: nodes
+
+    - debug:
+        var: nodes.stdout
+
+    - name: Get Pods
+      command: kubectl get pods -A
+      register: pods
+
+    - debug:
+        var: pods.stdout
+
+    - name: Get Services
+      command: kubectl get svc -A
+      register: svc
+
+    - debug:
+        var: svc.stdout
+
+    - name: Get Ingress
+      command: kubectl get ingress -A
+      register: ing
+
+    - debug:
+        var: ing.stdout

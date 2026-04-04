@@ -64,20 +64,16 @@ stages {
         }
     }
 
-    stage('Verify Deployment') {
-        steps {
-            dir('config') {
-                sh '''
-                echo "Verifying cluster resources..."
-
-                kubectl get nodes
-                kubectl get pods -A
-                kubectl get svc -A
-                kubectl get ingress -A
-                '''
-            }
+stage('Verify Deployment') {
+    steps {
+        dir('config') {
+            sh '''
+            echo "Verifying cluster via Ansible..."
+            ansible-playbook -i inventory.ini kubectlcmd.yaml
+            '''
         }
     }
+}
 
     stage('Complete') {
         steps {
