@@ -1,2 +1,26 @@
----
-# tasks file for ingress_controller
+- name: Install NGINX Ingress Controller
+  shell: |
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+
+- name: Wait for ingress controller pods
+  shell: |
+    kubectl get pods -n ingress-nginx --no-headers | grep Running | wc -l
+  register: ingress_pods
+  retries: 10
+  delay: 15
+  until: ingress_pods.stdout | int > 0
+
+- name: Copy dashboard ingress file
+  copy:
+    src: dashboard-ingress.yaml
+    dest: /tmp/dashboard-ingress.yaml
+
+- name: Apply ingress resource
+  shell: kubectl apply -f /tmp/dashboard-ingress.yaml
+
+- name: Verify ingress
+  shell: kubectl get ingress -A
+  register: ingress_output
+
+- debug:
+    var: ingress_output.stdout

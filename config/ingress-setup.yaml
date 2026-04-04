@@ -1,0 +1,6 @@
+- name: Setup Ingress Controller
+  hosts: k8s-master
+  become: yes
+
+  roles:
+    - ingress_controller
