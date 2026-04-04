@@ -4,5 +4,5 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   roles:
-    # - k8s_setup
-    - k8s_dashboard
+    - k8s_setup
+    # - k8s_dashboard
