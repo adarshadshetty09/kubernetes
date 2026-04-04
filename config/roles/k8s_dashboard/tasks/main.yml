@@ -26,6 +26,7 @@
   when: helm_check.rc != 0
 
 # ✅ Wait for Kubernetes API
+# Wait for Kubernetes API
 - name: Wait for Kubernetes API
   command: kubectl get nodes
   register: api_check
@@ -33,15 +34,11 @@
   delay: 6
   until: api_check.rc == 0
 
-- name: Install Kubernetes Dashboard (OCI)
-  command: >
-    helm upgrade --install kubernetes-dashboard
-    oci://registry.k8s.io/dashboard/kubernetes-dashboard
-    --version 7.5.0
-    --namespace {{ dashboard_namespace }}
-    --create-namespace
-    --wait
-    --timeout 5m
+# Install Dashboard (WORKING METHOD)
+- name: Deploy Kubernetes Dashboard
+  command: kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+
+  
 # ✅ Wait for pods
 - name: Wait for dashboard pods
   shell: kubectl get pods -n {{ dashboard_namespace }} --no-headers
