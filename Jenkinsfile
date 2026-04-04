@@ -13,13 +13,6 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
-            steps {
-                sh '''
-                sudo dnf install -y ansible-core git wget vim nano tar unzip
-                '''
-            }
-        }
 
         stage('Install Ansible Collections') {
             steps {
