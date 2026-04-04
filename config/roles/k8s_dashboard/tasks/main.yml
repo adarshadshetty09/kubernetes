@@ -3,6 +3,15 @@
   register: helm_check
   ignore_errors: yes
 
+- name: Install required packages for Helm
+  package:
+    name:
+      - curl
+      - openssl
+      - tar
+    state: present
+  when: helm_check.rc != 0
+
 - name: Download Helm install script
   get_url:
     url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
@@ -14,8 +23,18 @@
   command: /tmp/get_helm.sh
   when: helm_check.rc != 0
 
+- name: Wait for Kubernetes API
+  shell: kubectl get nodes
+  register: api_check
+  retries: 5
+  delay: 5
+  until: api_check.rc == 0
+
 - name: Add Kubernetes Dashboard repo
-  shell: helm repo list | grep kubernetes-dashboard || helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
+  command: helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
+  register: repo_add
+  failed_when: false
+  changed_when: "'has been added' in repo_add.stdout"
 
 - name: Update Helm repo
   command: helm repo update
@@ -69,6 +88,12 @@
 - name: Apply RBAC
   command: kubectl apply -f /tmp/dashboard-admin.yaml
 
+- name: Generate dashboard token
+  command: kubectl -n {{ dashboard_namespace }} create token admin-user
+  register: dashboard_token
+
 - name: Show Dashboard URL
   debug:
-    msg: "Dashboard URL: https://{{ ansible_host }}:{{ nodeport.stdout }}"
+    msg:
+      - "Dashboard URL: https://{{ ansible_host }}:{{ nodeport.stdout }}"
+      - "Token: {{ dashboard_token.stdout }}"
