@@ -74,5 +74,4 @@
     # ✅  Output
     - name: Show Jenkins URL
       debug:
-        msg: "Jenkins URL: http://{{ ansible_host }}:{{ jenkins_port }}"
-~                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
+        msg: "Jenkins URL: http://{{ ansible_host }}:{{ jenkins_port }}"                                                                                                                                                                                                                                                                                                                            
