@@ -9,6 +9,7 @@
       - curl
       - openssl
       - tar
+      - git
     state: present
   when: helm_check.rc != 0
 
