@@ -1,6 +1,10 @@
 - name: Setup Ingress Controller
-  hosts: k8s-master
+  hosts: master
   become: yes
+
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+    PATH: "/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin"
 
   roles:
     - ingress_controller
