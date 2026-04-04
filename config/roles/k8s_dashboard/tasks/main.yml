@@ -38,7 +38,7 @@
 - name: Deploy Kubernetes Dashboard
   command: kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
 
-  
+
 # ✅ Wait for pods
 - name: Wait for dashboard pods
   shell: kubectl get pods -n {{ dashboard_namespace }} --no-headers
@@ -57,15 +57,13 @@
 - name: Patch dashboard service to NodePort
   command: >
     kubectl -n {{ dashboard_namespace }}
-    patch svc kubernetes-dashboard-kong-proxy
+    patch svc kubernetes-dashboard
     -p '{"spec": {"type": "NodePort"}}'
-  when:
-    - svc_type.stdout is defined
-    - svc_type.stdout != "NodePort"
+
 
 # ✅ Get NodePort safely
 - name: Get NodePort
-  shell: kubectl -n {{ dashboard_namespace }} get svc kubernetes-dashboard-kong-proxy -o jsonpath='{.spec.ports[0].nodePort}'
+  shell: kubectl -n {{ dashboard_namespace }} get svc kubernetes-dashboard -o jsonpath='{.spec.ports[0].nodePort}'
   register: nodeport
   retries: 5
   delay: 5
