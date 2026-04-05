@@ -11,57 +11,51 @@
   command: kubectl create namespace argocd
   when: ns_check.rc != 0
 
-# 🔥 SAFE CRD HANDLING (UPDATED ✅)
-- name: Check if ApplicationSet CRD exists
-  shell: kubectl get crd applicationsets.argoproj.io
-  register: crd_check
-  ignore_errors: yes
-  changed_when: false
-
-- name: Delete applicationset CRD only if needed
-  shell: kubectl delete crd applicationsets.argoproj.io
-  when: crd_check.rc == 0
-
-- name: Wait before reinstall CRD
-  pause:
-    seconds: 5
-
-# 🔥 APPLY STABLE CRDs (VERSION PINNED)
+# 🔥 TRY APPLY CRDs FIRST (NO DELETE)
 - name: Apply ArgoCD Application CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/application-crd.yaml
   register: crd_app
-  retries: 3
-  delay: 5
-  until: crd_app.rc == 0
+  ignore_errors: yes
 
 - name: Apply ArgoCD AppProject CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/appproject-crd.yaml
   register: crd_proj
-  retries: 3
-  delay: 5
-  until: crd_proj.rc == 0
+  ignore_errors: yes
 
 - name: Apply ArgoCD ApplicationSet CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/applicationset-crd.yaml
   register: crd_set
-  retries: 3
-  delay: 5
-  until: crd_set.rc == 0
+  ignore_errors: yes
 
-# ✅ Install ArgoCD (same version)
+# 🔥 DELETE ONLY IF ERROR OCCURS (KEY FIX)
+- name: Delete ApplicationSet CRD if apply failed
+  shell: kubectl delete crd applicationsets.argoproj.io
+  when: crd_set.rc != 0
+  ignore_errors: yes
+
+- name: Wait before reapply
+  pause:
+    seconds: 5
+  when: crd_set.rc != 0
+
+- name: Reapply ApplicationSet CRD after cleanup
+  command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/applicationset-crd.yaml
+  when: crd_set.rc != 0
+
+# ✅ Install ArgoCD
 - name: Install ArgoCD
   command: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/install.yaml
 
-# 🔥 Clean failed pods (important)
+# 🔥 Clean failed pods
 - name: Delete failed ArgoCD pods
   shell: kubectl delete pod -n argocd --field-selector=status.phase=Failed
   ignore_errors: yes
 
-# ✅ BEST WAIT METHOD (production grade)
+# ✅ Production wait
 - name: Wait for ArgoCD pods to be fully ready
   shell: kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s
 
-# ✅ Show final status
+# ✅ Show status
 - name: Show ArgoCD pod status
   command: kubectl get pods -n argocd
   register: pod_status
