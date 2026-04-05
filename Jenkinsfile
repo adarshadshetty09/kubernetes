@@ -36,7 +36,7 @@ stages {
             dir('config') {
                 sh '''
                 echo "Setting up Kubernetes cluster..."
-                ansible-playbook -i inventory.ini k8s_setup.yaml -vv
+                ansible-playbook -i inventory.ini k8s_setup.yaml
                 '''
             }
         }
@@ -47,7 +47,7 @@ stages {
             dir('config') {
                 sh '''
                 echo "Deploying Kubernetes Dashboard..."
-                ansible-playbook -i inventory.ini k8s_dashboard.yaml -vv
+                ansible-playbook -i inventory.ini k8s_dashboard.yaml
                 '''
             }
         }
@@ -58,7 +58,7 @@ stages {
             dir('config') {
                 sh '''
                 echo "Installing NGINX Ingress Controller..."
-                ansible-playbook -i inventory.ini ingress-setup.yaml -vv
+                ansible-playbook -i inventory.ini ingress-setup.yaml
                 '''
             }
         }
@@ -69,7 +69,7 @@ stage('Verify Deployment') {
         dir('config') {
             sh '''
             echo "Verifying cluster via Ansible..."
-            ansible-playbook -i inventory.ini kubectlcmd.yaml -vv
+            ansible-playbook -i inventory.ini kubectlcmd.yaml
             '''
         }
     }
