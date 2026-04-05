@@ -1,9 +1,11 @@
 ---
 # tasks file for helm
+
 - name: Check if Helm exists
   command: /usr/local/bin/helm version
   register: helm_check
   ignore_errors: yes
+  changed_when: false
 
 - name: Download Helm install script
   get_url:
@@ -19,6 +21,8 @@
 - name: Verify Helm installation
   command: /usr/local/bin/helm version
   register: helm_output
+  changed_when: false
 
-- debug:
+- name: Show Helm version
+  debug:
     var: helm_output.stdout

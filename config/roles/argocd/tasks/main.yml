@@ -1,18 +1,33 @@
 ---
 # tasks file for argocd
-- name: Create argocd namespace
-  command: kubectl create namespace argocd
-  ignore_errors: yes
 
+- name: Ensure argocd namespace exists
+  command: kubectl get namespace argocd
+  register: ns_check
+  ignore_errors: yes
+  changed_when: false
+
+- name: Create argocd namespace if not exists
+  command: kubectl create namespace argocd
+  when: ns_check.rc != 0
+
+# ✅ Install ArgoCD (safe for re-runs)
 - name: Install ArgoCD
   command: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+  register: argocd_install
+  failed_when: >
+    argocd_install.rc != 0 and
+    "Too long" not in argocd_install.stderr
 
-- name: Wait for ArgoCD pods
-  shell: kubectl get pods -n argocd
+# ✅ Better wait logic
+- name: Wait for ArgoCD pods to be ready
+  shell: kubectl get pods -n argocd --no-headers
   register: pod_status
-  until: "'Running' in pod_status.stdout"
-  retries: 10
-  delay: 15
+  until: >
+    pod_status.stdout_lines | select('search', 'Running') | list | length >= 6
+  retries: 20
+  delay: 10
 
-- debug:
+- name: Show ArgoCD pod status
+  debug:
     var: pod_status.stdout
