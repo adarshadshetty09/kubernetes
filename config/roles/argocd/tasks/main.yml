@@ -20,14 +20,12 @@
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/application-crd.yaml
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: crd_app
   ignore_errors: yes
 
 - name: Apply ArgoCD AppProject CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/appproject-crd.yaml
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: crd_proj
   ignore_errors: yes
 
 - name: Apply ArgoCD ApplicationSet CRD
@@ -75,7 +73,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
-# ✅ Verify ArgoCD service exists (IMPORTANT)
+# ✅ Verify ArgoCD service exists
 - name: Wait for argocd-server service
   shell: kubectl get svc argocd-server -n argocd
   environment:
@@ -85,47 +83,27 @@
   delay: 5
   until: svc_check.rc == 0
 
-# 🔥 Create Ingress
-- name: Create ArgoCD ingress manifest
-  copy:
-    dest: /tmp/argocd-ingress.yaml
-    content: |
-      apiVersion: networking.k8s.io/v1
-      kind: Ingress
-      metadata:
-        name: argocd-ingress
-        namespace: argocd
-        annotations:
-          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-      spec:
-        ingressClassName: nginx
-        rules:
-        - host: argocd.local
-          http:
-            paths:
-            - path: /
-              pathType: Prefix
-              backend:
-                service:
-                  name: argocd-server
-                  port:
-                    number: 443
-
-# 🔥 Apply ingress
-- name: Apply ArgoCD ingress
-  command: kubectl apply -f /tmp/argocd-ingress.yaml
+# 🔥 Ensure NodePort (IMPORTANT)
+- name: Get current service type
+  shell: kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.type}'
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
+  register: svc_type
 
-# 🔥 Verify ingress
-- name: Check ArgoCD ingress
-  command: kubectl get ingress -n argocd
+- name: Patch ArgoCD service to NodePort if needed
+  command: >
+    kubectl patch svc argocd-server -n argocd
+    -p '{"spec": {"type": "NodePort"}}'
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: ingress_output
+  when: svc_type.stdout != "NodePort"
 
-- debug:
-    var: ingress_output.stdout
+# 🔥 Get NodePort dynamically
+- name: Get ArgoCD NodePort (HTTPS)
+  shell: kubectl get svc argocd-server -n argocd -o jsonpath='{.spec.ports[?(@.port==443)].nodePort}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: argocd_nodeport
 
 # 🔑 Get password
 - name: Get ArgoCD admin password
@@ -134,5 +112,10 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: argocd_password
 
-- debug:
-    msg: "ArgoCD Password: {{ argocd_password.stdout }}"
+# 🚀 FINAL OUTPUT
+- name: Show ArgoCD access details
+  debug:
+    msg:
+      - "ArgoCD URL: https://{{ ansible_host }}:{{ argocd_nodeport.stdout }}"
+      - "Username: admin"
+      - "Password: {{ argocd_password.stdout }}"
