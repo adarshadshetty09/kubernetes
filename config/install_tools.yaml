@@ -1,0 +1,7 @@
+- name: Install Helm and ArgoCD
+  hosts: k8s_master
+  become: yes
+
+  roles:
+    - helm
+    - argocd
