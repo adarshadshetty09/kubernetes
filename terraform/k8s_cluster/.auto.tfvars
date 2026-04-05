@@ -65,7 +65,7 @@ kubernetes_clusters_project = {
 
 kubernetes_clusters_project_config = {
   "ansible-master-node" = {
-    enable_external_ip                 = true
+    enable_external_ip                 = false
     enable_shielded_vm                 = true
     machine_name                       = "ansible-master-node"
     instance_count                     = 1
