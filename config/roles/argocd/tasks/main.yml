@@ -11,17 +11,30 @@
   command: kubectl create namespace argocd
   when: ns_check.rc != 0
 
-# 🔥 FIX ROOT CAUSE (ADD THIS)
-- name: Fix ArgoCD CRDs (production fix)
-  shell: |
-    kubectl delete crd applicationsets.argoproj.io --ignore-not-found
-    kubectl apply -k https://github.com/argoproj/argo-cd/manifests/crds
+# 🔥 Force delete problematic CRD
+- name: Delete applicationset CRD if exists
+  shell: kubectl delete crd applicationsets.argoproj.io --ignore-not-found
+  ignore_errors: yes
 
-# ✅ Install ArgoCD (clean now)
+# 🔥 Wait for cleanup
+- name: Wait before reinstall CRD
+  pause:
+    seconds: 5
+
+# 🔥 Apply CRDs with retry (IMPORTANT)
+- name: Apply ArgoCD CRDs
+  shell: kubectl apply -k https://github.com/argoproj/argo-cd/manifests/crds
+  register: crd_apply
+  retries: 3
+  delay: 10
+  until: crd_apply.rc == 0
+  ignore_errors: yes
+
+# ✅ Install ArgoCD
 - name: Install ArgoCD
   command: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-# ✅ Better wait logic
+# ✅ Wait for pods
 - name: Wait for ArgoCD pods to be ready
   shell: kubectl get pods -n argocd --no-headers
   register: pod_status
