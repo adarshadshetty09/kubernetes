@@ -75,6 +75,17 @@ stage('Verify Deployment') {
     }
 }
 
+stage('Install Helm and ArgoCD') {
+    steps {
+        dir('config') {
+            sh '''
+            echo "Install Helm and ArgoCD..."
+            ansible-playbook -i inventory.ini install_tools.yaml
+            '''
+        }
+    }
+}
+
     stage('Complete') {
         steps {
             echo 'Kubernetes + Dashboard + Ingress setup completed successfully'
