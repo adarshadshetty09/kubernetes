@@ -3,33 +3,45 @@
 
 - name: Ensure argocd namespace exists
   command: kubectl get namespace argocd
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: ns_check
   ignore_errors: yes
   changed_when: false
 
 - name: Create argocd namespace if not exists
   command: kubectl create namespace argocd
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   when: ns_check.rc != 0
 
-# 🔥 TRY APPLY CRDs FIRST (NO DELETE)
+# 🔥 APPLY CRDs FIRST
 - name: Apply ArgoCD Application CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/application-crd.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: crd_app
   ignore_errors: yes
 
 - name: Apply ArgoCD AppProject CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/appproject-crd.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: crd_proj
   ignore_errors: yes
 
 - name: Apply ArgoCD ApplicationSet CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/applicationset-crd.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: crd_set
   ignore_errors: yes
 
-# 🔥 DELETE ONLY IF ERROR OCCURS (KEY FIX)
+# 🔥 SELF-HEAL CRD ONLY IF FAILED
 - name: Delete ApplicationSet CRD if apply failed
   shell: kubectl delete crd applicationsets.argoproj.io
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   when: crd_set.rc != 0
   ignore_errors: yes
 
@@ -40,25 +52,87 @@
 
 - name: Reapply ApplicationSet CRD after cleanup
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/applicationset-crd.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   when: crd_set.rc != 0
 
 # ✅ Install ArgoCD
 - name: Install ArgoCD
   command: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/install.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
 # 🔥 Clean failed pods
 - name: Delete failed ArgoCD pods
   shell: kubectl delete pod -n argocd --field-selector=status.phase=Failed
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   ignore_errors: yes
 
-# ✅ Production wait
+# ✅ Wait until ArgoCD fully ready
 - name: Wait for ArgoCD pods to be fully ready
   shell: kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
-# ✅ Show status
-- name: Show ArgoCD pod status
-  command: kubectl get pods -n argocd
-  register: pod_status
+# ✅ Verify ArgoCD service exists (IMPORTANT)
+- name: Wait for argocd-server service
+  shell: kubectl get svc argocd-server -n argocd
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: svc_check
+  retries: 10
+  delay: 5
+  until: svc_check.rc == 0
+
+# 🔥 Create Ingress
+- name: Create ArgoCD ingress manifest
+  copy:
+    dest: /tmp/argocd-ingress.yaml
+    content: |
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: argocd-ingress
+        namespace: argocd
+        annotations:
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      spec:
+        ingressClassName: nginx
+        rules:
+        - host: argocd.local
+          http:
+            paths:
+            - path: /
+              pathType: Prefix
+              backend:
+                service:
+                  name: argocd-server
+                  port:
+                    number: 443
+
+# 🔥 Apply ingress
+- name: Apply ArgoCD ingress
+  command: kubectl apply -f /tmp/argocd-ingress.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+# 🔥 Verify ingress
+- name: Check ArgoCD ingress
+  command: kubectl get ingress -n argocd
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: ingress_output
 
 - debug:
-    var: pod_status.stdout
+    var: ingress_output.stdout
+
+# 🔑 Get password
+- name: Get ArgoCD admin password
+  shell: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: argocd_password
+
+- debug:
+    msg: "ArgoCD Password: {{ argocd_password.stdout }}"
