@@ -11,10 +11,16 @@
   command: kubectl create namespace argocd
   when: ns_check.rc != 0
 
-# 🔥 Clean old problematic CRD
-- name: Delete applicationset CRD if exists
-  shell: kubectl delete crd applicationsets.argoproj.io --ignore-not-found
+# 🔥 SAFE CRD HANDLING (UPDATED ✅)
+- name: Check if ApplicationSet CRD exists
+  shell: kubectl get crd applicationsets.argoproj.io
+  register: crd_check
   ignore_errors: yes
+  changed_when: false
+
+- name: Delete applicationset CRD only if needed
+  shell: kubectl delete crd applicationsets.argoproj.io
+  when: crd_check.rc == 0
 
 - name: Wait before reinstall CRD
   pause:
