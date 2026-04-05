@@ -20,7 +20,7 @@
   pause:
     seconds: 5
 
-# 🔥 APPLY STABLE CRDs (VERSION PINNED - FIXED)
+# 🔥 APPLY STABLE CRDs (VERSION PINNED)
 - name: Apply ArgoCD Application CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/application-crd.yaml
   register: crd_app
@@ -35,26 +35,30 @@
   delay: 5
   until: crd_proj.rc == 0
 
-- name: Apply ArgoCD ApplicationSet CRD (FIXED SIZE)
+- name: Apply ArgoCD ApplicationSet CRD
   command: kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/crds/applicationset-crd.yaml
   register: crd_set
   retries: 3
   delay: 5
   until: crd_set.rc == 0
 
-# ✅ Install ArgoCD (MATCH VERSION)
+# ✅ Install ArgoCD (same version)
 - name: Install ArgoCD
   command: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.3/manifests/install.yaml
 
-# ✅ Wait for ArgoCD pods
-- name: Wait for ArgoCD pods to be ready
-  shell: kubectl get pods -n argocd --no-headers
-  register: pod_status
-  until: >
-    pod_status.stdout_lines | select('search', 'Running') | list | length >= 6
-  retries: 20
-  delay: 10
+# 🔥 Clean failed pods (important)
+- name: Delete failed ArgoCD pods
+  shell: kubectl delete pod -n argocd --field-selector=status.phase=Failed
+  ignore_errors: yes
 
+# ✅ BEST WAIT METHOD (production grade)
+- name: Wait for ArgoCD pods to be fully ready
+  shell: kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s
+
+# ✅ Show final status
 - name: Show ArgoCD pod status
-  debug:
+  command: kubectl get pods -n argocd
+  register: pod_status
+
+- debug:
     var: pod_status.stdout
