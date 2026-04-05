@@ -1,0 +1,17 @@
+- name: Deploy Application
+  hosts: master
+  become: yes
+
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+  tasks:
+
+    - name: Apply Deployment
+      command: kubectl apply -f /home/ansible/kubernetes/k8s-manifests/deployment.yaml
+
+    - name: Apply Service
+      command: kubectl apply -f /home/ansible/kubernetes/k8s-manifests/service.yaml
+
+    - name: Apply Ingress
+      command: kubectl apply -f /home/ansible/kubernetes/k8s-manifests/ingress.yaml
