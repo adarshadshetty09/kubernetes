@@ -7,7 +7,7 @@ region             = "northamerica-northeast1"
 
 kubernetes_clusters_project = {
     "kubernetes" = {
-    enable_external_ip                 = false
+    enable_external_ip                 = true
     enable_shielded_vm                 = true
     machine_name                       = "kubernetes"
     instance_count                     = 2
@@ -65,7 +65,7 @@ kubernetes_clusters_project = {
 
 kubernetes_clusters_project_config = {
   "ansible-master-node" = {
-    enable_external_ip                 = false
+    enable_external_ip                 = true
     enable_shielded_vm                 = true
     machine_name                       = "ansible-master-node"
     instance_count                     = 1

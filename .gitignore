@@ -15,22 +15,28 @@ Thumbs.db
 ############################
 .terraform/
 .terraform.lock.hcl
-terraform.tfstate
-terraform.tfstate.*
+*.tfstate
+*.tfstate.*
 crash.log
 crash.*.log
-# *.tfvars
-# *.tfvars.json
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
 
 ############################
-# Terraform backend & secrets
+# Terraform Secrets / Vars
 ############################
+*.tfvars
+*.tfvars.json
 backend.tfvars
 secrets.tfvars
+
+############################
+# Terraform Plans
+############################
+*.plan
+plan.txt
 
 ############################
 # Packer
@@ -50,7 +56,7 @@ ansible/inventories/*/*.pem
 ansible/vault.yml
 
 ############################
-# SSH keys
+# SSH Keys
 ############################
 *.pem
 *.ppk
@@ -70,55 +76,13 @@ jenkins/workspace/
 jenkins/*.log
 
 ############################
-# Scripts output
+# Script Outputs
 ############################
 scripts/*.out
 scripts/*.result
 
 ############################
-# Environment files
+# Environment Files
 ############################
 .env
 .env.*
-
-
-#######################
-# pem files
-id_rsa.pem
-*.pem
-
-
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.*
-crash.log
-
-# Plans
-*.plan
-plan.txt
-
-# Sensitive files
-*.tfvars
-*.tfvars.json
-
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.*
-crash.log
-
-# Plans
-*.plan
-plan.txt
-
-# Sensitive files
-*.tfvars
-*.tfvars.json
-
-# OS files
-.DS_Store
-Thumbs.db
-# OS files
-.DS_Store
-Thumbs.db
