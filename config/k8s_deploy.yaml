@@ -15,3 +15,11 @@
 
     - name: Apply ArgoCD Application
       command: kubectl apply -f /tmp/myapp.yaml
+
+    - name: Copy ArgoCD application manifest
+      copy:
+        src: ../argocd/test.yaml
+        dest: /tmp/test.yaml
+
+    - name: Apply ArgoCD Application
+      command: kubectl apply -f /tmp/test.yaml
