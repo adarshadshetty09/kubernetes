@@ -5,7 +5,7 @@ metadata:
   namespace: argocd
 
 spec:
-  project: default   # ✅ separate project (RBAC control)
+  project: default
 
   source:
     repoURL: https://github.com/adarshadshetty09/kubernetes.git
@@ -14,10 +14,13 @@ spec:
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: production   # ✅ separate namespace
+    namespace: production
 
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
-      - CreateNamespace=true   # ✅ auto create namespace
+      - CreateNamespace=true
 
-  revisionHistoryLimit: 5      # ✅ rollback support
+  revisionHistoryLimit: 5
