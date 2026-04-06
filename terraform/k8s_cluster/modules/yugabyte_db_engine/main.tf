@@ -61,6 +61,7 @@ resource "google_compute_resource_policy" "snapshot_policy" {
 ###############################################
 resource "google_compute_disk" "boot_gce_disk" {
   count = var.enable_boot_disk ? var.instance_count : 0
+
   name  = "${var.machine_name}${count.index + 1}-boot-disk"
   size  = var.boot_disk_size
   type  = var.boot_disk_type
@@ -69,15 +70,12 @@ resource "google_compute_disk" "boot_gce_disk" {
   snapshot = var.instance_with_bootdisk_snapshot ? var.snapshot_selflink : null
   image    = var.instance_with_bootdisk_snapshot ? null : var.instance_image_selflink
 
-  # disk_encryption_key {
-  #   kms_key_self_link = var.kms_key_self_link
-  # }
   dynamic "disk_encryption_key" {
-  for_each = var.kms_key_self_link != null && var.kms_key_self_link != "" ? [1] : []
-  content {
-    kms_key_self_link = var.kms_key_self_link
+    for_each = var.kms_key_self_link != null && var.kms_key_self_link != "" ? [1] : []
+    content {
+      kms_key_self_link = var.kms_key_self_link
+    }
   }
-}
 
   labels = merge(var.labels, {
     type     = "boot"
@@ -86,7 +84,6 @@ resource "google_compute_disk" "boot_gce_disk" {
 
   physical_block_size_bytes = 4096
 
-  #  LIFECYCLE PATCH
   lifecycle {
     ignore_changes = [
       image,
@@ -113,26 +110,18 @@ resource "google_compute_disk_resource_policy_attachment" "boot_diskpolicy_attac
 # Random External IP Suffix
 ###############################################
 resource "random_id" "external_ip_suffix" {
-  count       = var.instance_count
+  # ❌ OLD: count = var.instance_count
+  count       = var.enable_external_ip ? var.instance_count : 0   # ✅ FIXED
   byte_length = 2
 }
-
-###############################################
-# Static Internal IPs
-###############################################
-# resource "google_compute_address" "static_internal_ip_address" {
-#   count        = var.instance_count
-#   name         = "${var.machine_name}-int-ip-${count.index + 1}"
-#   address_type = "INTERNAL"
-#   address      = element(var.internal_ip, count.index % length(var.internal_ip))
-#   subnetwork   = var.subnetwork
-# }
 
 ###############################################
 # External IPs
 ###############################################
 resource "google_compute_address" "static_external_ip_address" {
-  count  = var.instance_count
+  # ❌ OLD: count = var.instance_count
+  count  = var.enable_external_ip ? var.instance_count : 0   # ✅ FIXED
+
   name   = "${var.machine_name}${count.index + 1}-ext-ip-${random_id.external_ip_suffix[count.index].hex}"
   region = var.region
 }
@@ -159,7 +148,6 @@ resource "google_compute_instance" "gce_vm" {
   network_interface {
     network    = var.network
     subnetwork = var.subnetwork
-    # network_ip = google_compute_address.static_internal_ip_address[count.index].address
     network_ip = element(var.internal_ip, count.index)
 
     dynamic "access_config" {
@@ -171,7 +159,6 @@ resource "google_compute_instance" "gce_vm" {
     }
   }
 
-  #  REPLACED LIFECYCLE BLOCK (expanded version)
   lifecycle {
     ignore_changes = [
       attached_disk,
@@ -196,19 +183,7 @@ resource "google_compute_instance" "gce_vm" {
     }
   }
 
-  # metadata = var.metadata
-
-
-  # #  ENTERPRISE SSH (NO USERNAME / NO KEY)
-  # metadata = {
-  #   enable-oslogin = "TRUE"
-  # }
-
-
-metadata = var.metadata
-# metadata = {
-#   ssh-keys = "yugabyte:${file("~/.ssh/id_rsa.pub")}"
-# }
+  metadata = var.metadata
 
   dynamic "scratch_disk" {
     for_each = range(var.local_disk_count)
