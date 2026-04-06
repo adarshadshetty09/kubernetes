@@ -5,7 +5,7 @@ metadata:
   namespace: argocd
 
 spec:
-  project: production   # ✅ separate project (RBAC control)
+  project: default   # ✅ separate project (RBAC control)
 
   source:
     repoURL: https://github.com/adarshadshetty09/kubernetes.git
