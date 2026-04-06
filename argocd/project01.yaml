@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: project-test-prod
+  namespace: argocd
+
+spec:
+  project: production   # ✅ separate project (RBAC control)
+
+  source:
+    repoURL: https://github.com/adarshadshetty09/kubernetes.git
+    targetRevision: kubernete_files
+    path: project01
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production   # ✅ separate namespace
+
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true   # ✅ auto create namespace
+
+  revisionHistoryLimit: 5      # ✅ rollback support
