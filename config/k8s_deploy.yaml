@@ -10,8 +10,8 @@
 
     - name: Copy myapp manifest
       copy:
-        src: ../argocd/myapp.yaml
-        dest: /tmp/myapp.yaml
+        src: ../argocd/project01.yaml
+        dest: /tmp/project01.yaml
 
     - name: Apply myapp
-      command: kubectl apply -f /tmp/myapp.yaml
+      command: kubectl apply -f /tmp/project01.yaml
