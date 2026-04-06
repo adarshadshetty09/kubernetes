@@ -38,6 +38,23 @@ secrets.tfvars
 packer_cache/
 *.pkrvars.hcl
 *.pkrvars.json
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Plans
+*.plan
+plan.txt
+
+# Sensitive files
+*.tfvars
+*.tfvars.json
+
+# OS files
+.DS_Store
+Thumbs.db
 manifest.json
 
 ############################
