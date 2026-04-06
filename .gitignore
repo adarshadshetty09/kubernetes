@@ -86,3 +86,39 @@ scripts/*.result
 # pem files
 id_rsa.pem
 *.pem
+
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Plans
+*.plan
+plan.txt
+
+# Sensitive files
+*.tfvars
+*.tfvars.json
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Plans
+*.plan
+plan.txt
+
+# Sensitive files
+*.tfvars
+*.tfvars.json
+
+# OS files
+.DS_Store
+Thumbs.db
+# OS files
+.DS_Store
+Thumbs.db
