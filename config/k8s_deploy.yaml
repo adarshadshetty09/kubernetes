@@ -23,3 +23,11 @@
 
     - name: Apply project02.yaml
       command: kubectl apply -f /tmp/project02.yaml
+    
+    - name: Copy project002.yaml manifest
+      copy:
+        src: ../argocd/project002.yaml
+        dest: /tmp/project002.yaml
+
+    - name: Apply project002.yaml
+      command: kubectl apply -f /tmp/project002.yaml
