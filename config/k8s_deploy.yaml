@@ -8,10 +8,18 @@
 
   tasks:
 
-    - name: Copy myapp manifest
+    - name: Copy project01.yaml manifest
       copy:
         src: ../argocd/project01.yaml
         dest: /tmp/project01.yaml
 
-    - name: Apply myapp
+    - name: Apply project01.yaml
       command: kubectl apply -f /tmp/project01.yaml
+
+    - name: Copy myapp manifest
+      copy:
+        src: ../argocd/project02.yaml
+        dest: /tmp/project02.yaml
+
+    - name: Apply project02.yaml
+      command: kubectl apply -f /tmp/project02.yaml
