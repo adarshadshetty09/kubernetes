@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: argocd
+
+spec:
+  project: my-project   
+
+  source:
+    repoURL: https://github.com/adarshadshetty09/kubernetes.git
+    targetRevision: kubernete_files
+    path: project01
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
