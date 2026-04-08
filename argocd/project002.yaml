@@ -10,11 +10,11 @@ spec:
   source:
     repoURL: https://github.com/adarshadshetty09/kubernetes.git
     targetRevision: kubernete_files
-    path: project01
+    path: apache
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: production
+    namespace: httpd
 
   syncPolicy:
     automated:
