@@ -1,11 +1,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: my-app
+  name: my-project
   namespace: argocd
 
 spec:
-  project: my-project   
+  project: my-project
 
   source:
     repoURL: https://github.com/adarshadshetty09/kubernetes.git
@@ -20,6 +20,9 @@ spec:
     automated:
       prune: true
       selfHeal: true
-
+    retry:
+      limit: 3
     syncOptions:
-      - CreateNamespace=true  
+      - CreateNamespace=true
+
+  revisionHistoryLimit: 5
