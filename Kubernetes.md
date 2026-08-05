@@ -3078,3 +3078,3019 @@ The Local Volume data is also lost because it is physically stored on that Node.
 | Node Affinity Required    | No                                        | Yes                                                                    |
 | Provisioning              | Automatic                                 | Static only                                                            |
 | Best Use Case             | Cache, temporary files, container sharing | High-performance node-local storage, non-critical persistent workloads |
+
+
+
+This is one of the **most important Kubernetes storage concepts**. In interviews and production, you'll often be asked:
+
+> **"What is emptyDir? When do you use it? What happens when the Pod is deleted?"**
+
+Let's understand it like you're actually working as a DevOps Engineer.
+
+---
+
+# What is emptyDir?
+
+`emptyDir` is a **temporary volume** that Kubernetes creates **when a Pod starts**.
+
+Think of it as:
+
+```
+Pod Starts
+      │
+      ▼
+Creates an Empty Folder
+      │
+Containers use it
+      │
+Pod Deleted
+      │
+Folder Deleted
+```
+
+So,
+
+* Pod starts → empty folder created
+* Containers can write/read
+* Pod deleted → everything inside disappears
+
+This is why it is called **emptyDir**.
+
+---
+
+# Real World Example
+
+Suppose you have
+
+```
+Nginx
++
+Log Processor
+```
+
+```
+             Pod
+
+      +-------------------+
+
+      Nginx Container
+
+        writes logs
+
+             │
+
+             ▼
+
+        emptyDir Volume
+
+             ▲
+
+             │
+
+      Fluentd Container
+
+       reads logs
+```
+
+Instead of saving logs inside nginx container,
+
+both containers use the same folder.
+
+---
+
+# Lab 1
+
+Create directory
+
+```bash
+mkdir storage-persistence
+cd storage-persistence
+```
+
+Create file
+
+```bash
+touch empty-dir-example.yaml
+```
+
+---
+
+# YAML Explained
+
+```yaml
+apiVersion: v1
+```
+
+Using Kubernetes Core API.
+
+---
+
+```yaml
+kind: Pod
+```
+
+Create one Pod.
+
+---
+
+```yaml
+metadata:
+  name: empty-dir-demo
+```
+
+Pod name.
+
+---
+
+```yaml
+labels:
+  name: empty-dir-demo
+```
+
+Label for identification.
+
+---
+
+## Container
+
+```yaml
+containers:
+```
+
+Only one container.
+
+---
+
+```yaml
+image: busybox:1.36.1
+```
+
+Busybox is a tiny Linux image.
+
+Think of it as Ubuntu with basic commands.
+
+---
+
+```yaml
+command:
+- sh
+- -c
+- sleep 3600
+```
+
+Normally Busybox exits immediately.
+
+This command tells it
+
+```
+Sleep for 1 hour
+```
+
+so the Pod remains Running.
+
+---
+
+Resources
+
+```yaml
+resources:
+  limits:
+```
+
+Limit memory and CPU.
+
+---
+
+Now important part
+
+```yaml
+volumeMounts:
+```
+
+This tells the container
+
+> Mount a storage volume here.
+
+```
+Container
+
+/usr/share/tmp
+
+↓
+
+Mounted Volume
+```
+
+---
+
+This line
+
+```yaml
+mountPath: /usr/share/tmp
+```
+
+means
+
+```
+Container filesystem
+
+/usr/share/tmp
+
+↓
+
+actually points to
+
+emptyDir volume
+```
+
+---
+
+Now volume
+
+```yaml
+volumes:
+```
+
+Create storage.
+
+```
+temporary-storage
+```
+
+is simply a name.
+
+---
+
+```yaml
+emptyDir: {}
+```
+
+Means
+
+```
+Create temporary storage
+```
+
+No size specified.
+
+---
+
+# Apply
+
+```bash
+kubectl apply -f empty-dir-example.yaml
+```
+
+Check
+
+```bash
+kubectl get pod
+```
+
+Output
+
+```
+NAME
+
+empty-dir-demo
+
+Running
+```
+
+---
+
+Describe
+
+```bash
+kubectl describe pod empty-dir-demo
+```
+
+Scroll until
+
+```
+Volumes:
+
+temporary-storage
+
+Type: EmptyDir
+```
+
+You'll also see
+
+```
+Mounted at
+
+/usr/share/tmp
+```
+
+---
+
+# Login
+
+```bash
+kubectl exec -it empty-dir-demo -- sh
+```
+
+Now you're inside container.
+
+---
+
+Move
+
+```bash
+cd /usr/share/tmp
+```
+
+Notice: your notes have `/usr/shared/temp` and `/usr/share/temp` in places. Use the same path that you configured in `mountPath` (for example, `/usr/share/tmp` or change the YAML consistently to `/usr/share/temp`).
+
+---
+
+List
+
+```bash
+ls -l
+```
+
+Output
+
+```
+total 0
+```
+
+Because Kubernetes created an empty folder.
+
+---
+
+Create file
+
+```bash
+echo "Hello from temp storage" > demo.txt
+```
+
+Check
+
+```bash
+cat demo.txt
+```
+
+Output
+
+```
+Hello from temp storage
+```
+
+---
+
+Exit
+
+```bash
+exit
+```
+
+---
+
+Delete Pod
+
+```bash
+kubectl delete -f empty-dir-example.yaml
+```
+
+(`--force` is usually unnecessary here because `sleep` exits cleanly when the Pod is deleted.)
+
+Pod disappears.
+
+Storage disappears.
+
+---
+
+Apply again
+
+```bash
+kubectl apply -f empty-dir-example.yaml
+```
+
+Login again.
+
+```bash
+kubectl exec -it empty-dir-demo -- sh
+```
+
+Go to directory
+
+```bash
+cd /usr/share/tmp
+ls
+```
+
+Output
+
+```
+nothing
+```
+
+Why?
+
+Because
+
+```
+Old Pod
+
+↓
+
+Deleted
+
+↓
+
+Storage Deleted
+
+↓
+
+New Pod
+
+↓
+
+New Empty Storage
+```
+
+This is the biggest property of emptyDir.
+
+---
+
+# Lab 2
+
+Now you have
+
+```
+Writer Container
+
++
+
+Reader Container
+```
+
+inside one Pod.
+
+```
+                Pod
+
++-------------------------------------+
+
+Writer Container
+
+      │
+
+      ▼
+
+    emptyDir
+
+      ▲
+
+      │
+
+Reader Container
+
++-------------------------------------+
+```
+
+Both share the same storage.
+
+---
+
+Writer
+
+```yaml
+mountPath: /usr/share/temp
+```
+
+Reader
+
+```yaml
+mountPath: /temp
+```
+
+Notice
+
+Different paths
+
+Same storage.
+
+Think like
+
+```
+Windows
+
+D:\Data
+
+Linux
+
+/home/data
+```
+
+Different path
+
+Same disk.
+
+---
+
+Writer
+
+```yaml
+readOnly: false
+```
+
+Can
+
+* create
+* modify
+* delete
+
+---
+
+Reader
+
+```yaml
+readOnly: true
+```
+
+Can only
+
+* read
+
+Cannot
+
+* create
+* modify
+* delete
+
+---
+
+Apply
+
+```bash
+kubectl apply -f empty-dir-example.yaml
+```
+
+---
+
+Describe
+
+```bash
+kubectl describe pod empty-dir-demo
+```
+
+Notice
+
+```
+Containers
+
+empty-dir-writer
+
+empty-dir-reader
+```
+
+Both mount same volume.
+
+---
+
+Open writer
+
+```bash
+kubectl exec -it empty-dir-demo -c empty-dir-writer -- sh
+```
+
+Create
+
+```bash
+cd /usr/share/temp
+
+echo "Hello" > hello.txt
+```
+
+Exit
+
+---
+
+Login reader
+
+```bash
+kubectl exec -it empty-dir-demo -c empty-dir-reader -- sh
+```
+
+Go
+
+```bash
+cd /temp
+```
+
+List
+
+```bash
+ls
+```
+
+Output
+
+```
+hello.txt
+```
+
+Read
+
+```bash
+cat hello.txt
+```
+
+Output
+
+```
+Hello
+```
+
+Now try
+
+```bash
+echo "Hi" > hello-reader.txt
+```
+
+Output
+
+```
+Read-only file system
+```
+
+Exactly as expected.
+
+---
+
+# Why does it work?
+
+```
+Writer
+
+writes
+
+↓
+
+emptyDir
+
+↓
+
+Reader
+
+reads
+```
+
+Not
+
+```
+Writer
+
+↓
+
+Reader
+```
+
+Both communicate through shared storage.
+
+---
+
+# Production Example 1 (Log Sharing)
+
+```
+App Container
+
+writes
+
+/application.log
+
+↓
+
+emptyDir
+
+↓
+
+Fluent Bit
+
+reads logs
+
+↓
+
+ElasticSearch
+```
+
+Almost every company uses something similar.
+
+---
+
+# Production Example 2 (File Processing)
+
+```
+Container A
+
+Downloads PDF
+
+↓
+
+emptyDir
+
+↓
+
+Container B
+
+Reads PDF
+
+↓
+
+Converts to Image
+```
+
+---
+
+# Production Example 3 (Machine Learning)
+
+```
+Downloader
+
+↓
+
+Downloads Model
+
+↓
+
+emptyDir
+
+↓
+
+Inference Server
+
+Loads Model
+```
+
+Avoids downloading twice.
+
+---
+
+# Production Example 4 (Init Container)
+
+```
+Init Container
+
+↓
+
+Downloads Config
+
+↓
+
+emptyDir
+
+↓
+
+Main Application
+
+Uses Config
+```
+
+This is a very common interview scenario.
+
+---
+
+# Practice Lab 1: Notes Sharing
+
+Create two containers:
+
+```
+Writer
+
+writes
+
+notes.txt
+```
+
+Reader
+
+```bash
+cat notes.txt
+```
+
+Goal:
+
+Understand shared volume behavior.
+
+---
+
+# Practice Lab 2: Image Sharing
+
+Container A
+
+```bash
+touch image1.png
+```
+
+Container B
+
+```bash
+ls
+```
+
+Verify file is visible.
+
+---
+
+# Practice Lab 3: Read-Only Test
+
+Reader
+
+Try
+
+```bash
+rm hello.txt
+```
+
+Expected
+
+```
+Read-only file system
+```
+
+---
+
+# Practice Lab 4: Multiple Files
+
+Writer
+
+```bash
+for i in 1 2 3 4 5
+do
+echo File$i > file$i.txt
+done
+```
+
+Reader
+
+```bash
+ls
+cat file3.txt
+```
+
+---
+
+# Practice Lab 5: Pod Restart Behavior
+
+1.
+
+Create
+
+```
+100 files
+```
+
+2.
+
+Delete Pod
+
+3.
+
+Create Pod again
+
+4.
+
+Observe
+
+```
+Everything gone
+```
+
+---
+
+# Practice Lab 6: Compare emptyDir vs Container Filesystem
+
+Inside the writer container:
+
+```bash
+echo "inside volume" > /usr/share/temp/volume.txt
+echo "inside container" > /root/container.txt
+```
+
+Verify both files exist.
+
+Delete and recreate the Pod, then check again:
+
+* `/usr/share/temp/volume.txt` → gone
+* `/root/container.txt` → also gone (because the container filesystem is recreated too)
+
+This helps you understand that **both are ephemeral**, but `emptyDir` is specifically designed to be **shared across containers in the same Pod**.
+
+---
+
+# Interview Questions
+
+**Q1. When is emptyDir created?**
+
+**Answer:** When the Pod is scheduled onto a node and starts.
+
+---
+
+**Q2. When is it deleted?**
+
+**Answer:** When the Pod is removed from the node (deleted or permanently terminated).
+
+---
+
+**Q3. Can multiple containers use the same emptyDir?**
+
+**Answer:** Yes. That's one of its main purposes.
+
+---
+
+**Q4. Is emptyDir persistent?**
+
+**Answer:** No. It is ephemeral storage.
+
+---
+
+**Q5. Can one container be read-only?**
+
+**Answer:** Yes, by mounting the volume with `readOnly: true`.
+
+---
+
+# Key Takeaways
+
+| Feature                       | `emptyDir`                                                  |
+| ----------------------------- | ----------------------------------------------------------- |
+| Created when                  | Pod starts                                                  |
+| Deleted when                  | Pod is deleted                                              |
+| Shared between containers     | ✅ Yes                                                       |
+| Persistent after Pod deletion | ❌ No                                                        |
+| Supports read-only mounts     | ✅ Yes                                                       |
+| Common production use         | Shared logs, temporary files, caches, init-container output |
+
+For a DevOps Engineer, mastering `emptyDir` is the first step in understanding Kubernetes storage. The next concepts to learn are **hostPath**, **PersistentVolume (PV)**, **PersistentVolumeClaim (PVC)**, **StorageClass**, and **dynamic provisioning**, which are the storage mechanisms most commonly used in production clusters.
+
+
+Yes. I also noticed a few mistakes in the YAML you pasted:
+
+* `cpu: "500m"empty` → should be `cpu: "500m"`
+* You used both `/usr/share/tmp` and `/usr/share/temp`. Use **one path consistently**.
+* `cd /usr/shared/temp` → should be `cd /usr/share/temp`
+* `labels: name: -dir-demo` → should be `labels: name: empty-dir-demo`
+
+Below are the corrected YAML files that you can use directly. These match the hands-on lab you shared. 
+
+---
+
+# Lab 1 - Single Container using emptyDir
+
+**empty-dir-example.yaml**
+
+```yaml
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: empty-dir-demo
+  labels:
+    app: empty-dir-demo
+
+spec:
+  containers:
+    - name: empty-dir-demo
+      image: busybox:1.36.1
+
+      command:
+        - sh
+        - -c
+        - sleep 3600
+
+      resources:
+        limits:
+          memory: "128Mi"
+          cpu: "500m"
+
+      volumeMounts:
+        - name: temporary-storage
+          mountPath: /usr/share/temp
+
+  volumes:
+    - name: temporary-storage
+      emptyDir: {}
+```
+
+---
+
+## Apply
+
+```bash
+kubectl apply -f empty-dir-example.yaml
+```
+
+Check
+
+```bash
+kubectl get pods
+```
+
+Describe
+
+```bash
+kubectl describe pod empty-dir-demo
+```
+
+Look for
+
+```
+Volumes:
+  temporary-storage
+    Type: EmptyDir
+```
+
+---
+
+## Login
+
+```bash
+kubectl exec -it empty-dir-demo -- sh
+```
+
+Go inside mounted directory
+
+```bash
+cd /usr/share/temp
+```
+
+Verify
+
+```bash
+ls -l
+```
+
+Output
+
+```
+total 0
+```
+
+Create file
+
+```bash
+echo "Hello from temp storage" > demo.txt
+```
+
+Read
+
+```bash
+cat demo.txt
+```
+
+Exit
+
+```bash
+exit
+```
+
+Delete pod
+
+```bash
+kubectl delete -f empty-dir-example.yaml
+```
+
+Create again
+
+```bash
+kubectl apply -f empty-dir-example.yaml
+```
+
+Login
+
+```bash
+kubectl exec -it empty-dir-demo -- sh
+```
+
+Check
+
+```bash
+cd /usr/share/temp
+
+ls
+```
+
+Output
+
+```
+Nothing
+```
+
+Because the Pod was deleted, the `emptyDir` was also deleted. 
+
+---
+
+# Lab 2 - Two Containers Sharing emptyDir
+
+**empty-dir-example.yaml**
+
+```yaml
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: empty-dir-demo
+  labels:
+    app: empty-dir-demo
+
+spec:
+  containers:
+
+    - name: empty-dir-writer
+      image: busybox:1.36.1
+
+      command:
+        - sh
+        - -c
+        - sleep 3600
+
+      resources:
+        limits:
+          memory: "128Mi"
+          cpu: "500m"
+
+      volumeMounts:
+        - name: temporary-storage
+          mountPath: /usr/share/temp
+          readOnly: false
+
+    - name: empty-dir-reader
+      image: busybox:1.36.1
+
+      command:
+        - sh
+        - -c
+        - sleep 3600
+
+      resources:
+        limits:
+          memory: "128Mi"
+          cpu: "500m"
+
+      volumeMounts:
+        - name: temporary-storage
+          mountPath: /temp
+          readOnly: true
+
+  volumes:
+    - name: temporary-storage
+      emptyDir: {}
+```
+
+---
+
+## Apply
+
+```bash
+kubectl apply -f empty-dir-example.yaml
+```
+
+Check
+
+```bash
+kubectl get pods
+```
+
+Describe
+
+```bash
+kubectl describe pod empty-dir-demo
+```
+
+Notice there are **two containers**.
+
+```
+Containers
+
+empty-dir-writer
+
+empty-dir-reader
+```
+
+---
+
+## Login to Writer
+
+```bash
+kubectl exec -it empty-dir-demo -c empty-dir-writer -- sh
+```
+
+Go
+
+```bash
+cd /usr/share/temp
+```
+
+Create file
+
+```bash
+echo "Hello Kubernetes" > hello.txt
+```
+
+Check
+
+```bash
+ls
+
+cat hello.txt
+```
+
+Exit
+
+```bash
+exit
+```
+
+---
+
+## Login to Reader
+
+```bash
+kubectl exec -it empty-dir-demo -c empty-dir-reader -- sh
+```
+
+Go
+
+```bash
+cd /temp
+```
+
+Check
+
+```bash
+ls
+```
+
+Output
+
+```
+hello.txt
+```
+
+Read
+
+```bash
+cat hello.txt
+```
+
+Output
+
+```
+Hello Kubernetes
+```
+
+Now try writing
+
+```bash
+echo "Reader data" > hello-reader.txt
+```
+
+Output
+
+```
+sh: can't create hello-reader.txt: Read-only file system
+```
+
+Because the reader mounted the volume with
+
+```yaml
+readOnly: true
+```
+
+it cannot create, modify, or delete files. 
+
+---
+
+# Production Example
+
+A common production pattern is an application container writing logs while a log collector reads the same files:
+
+```yaml
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: nginx-logging
+
+spec:
+  containers:
+
+    - name: nginx
+      image: nginx
+
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/nginx
+
+    - name: fluent-bit
+      image: fluent/fluent-bit
+
+      volumeMounts:
+        - name: logs
+          mountPath: /var/log/nginx
+          readOnly: true
+
+  volumes:
+    - name: logs
+      emptyDir: {}
+```
+
+Flow:
+
+```
+Nginx
+   │
+Writes logs
+   │
+emptyDir
+   │
+Fluent Bit
+   │
+ElasticSearch / OpenSearch
+```
+
+This pattern is widely used for temporary log sharing inside a Pod. 
+
+---
+
+After you finish `emptyDir`, the next hands-on labs I recommend are:
+
+1. `hostPath` volume
+2. PersistentVolume (PV)
+3. PersistentVolumeClaim (PVC)
+4. StorageClass and dynamic provisioning
+5. StatefulSet with persistent storage
+
+These build directly on `emptyDir` and represent how persistent storage is implemented in production Kubernetes clusters.
+
+
+mkdir storage-persistence
+cd storage-persistence
+
+touch empty-dir-example.yaml
+
+```
+apiVersion: v1
+kind: Pod 
+metadata:
+  name: empty-dir-demo
+  labels:
+    name: empty-dir-demo
+spec: 
+  containers:
+  - name: empty-dir-demo 
+    image: busybox:1.36.1
+    command:
+      - 'sh'
+      - '-c'
+      - 'sleep 3600'
+    resources: 
+      limits: 
+        memory: "128Mi"
+        cpu: "500m"empty
+    volumeMounts: 
+      - name: temporary-storage
+        mountPath: /usr/share/tmp 
+
+  volumes: 
+  - name: temporary-storage
+    emptyDir: {}
+
+```
+
+kubectl apply -f empty-dir-example.yaml
+
+kubectl get pod 
+kubectl describe pod empty-dir-demo
+
+look for volume section read everything
+
+kubectl exec -it empty-dir-demo -- sh 
+
+cd /usr/shared/temp 
+ls -l --> empty dir 
+
+create new file here 
+
+echo "Hello from temp storage" > demo.txt
+
+cat /usr/share/temp/demo.txt
+
+
+exit 
+
+kubectl delete --force -f empty-dir-example.yaml   (--force because sleep )
+
+
+apply this file once again kubectl apply -f empty-dir-example.yaml
+
+and exec into it. and see the demo.txt file exist or not file will be deleted.
+
+When pod delted the data also lost. 
+
+
+```
+apiVersion: v1
+kind: Pod 
+metadata:
+  name: empty-dir-demo
+  labels:
+    name: -dir-demo
+spec: 
+  containers:
+  - name: empty-dir-writer 
+    image: busybox:1.36.1
+    command:
+      - 'sh'
+      - '-c'
+      - 'sleep 3600'
+    resources: 
+      limits: 
+        memory: "128Mi"
+        cpu: "500m"
+    volumeMounts: 
+      - name: temporary-storage
+        mountPath: /usr/share/temp 
+        readOnly: false
+
+  - name: empty-dir-reader 
+    image: busybox:1.36.1
+    command:
+      - 'sh'
+      - '-c'
+      - 'sleep 3600'
+    resources: 
+      limits: 
+        memory: "128Mi"
+        cpu: "500m"
+    volumeMounts: 
+      - name: temporary-storage
+        mountPath: /temp 
+        readOnly: true
+
+  volumes: 
+  - name: temporary-storage
+    emptyDir: {}
+  
+```
+kubectl apply -f empty-dir-example.yaml
+
+kubectl get pod 
+
+kubectl describe pod empty-dir-demo
+
+
+Now we have 2 container inside the container 
+
+kubectl exec -it  empty-dir-demo -c empty-dir-writer -- sh 
+
+cd /usr/share/temp 
+echo "Hello" > hello.txt
+
+exit
+kubectl exec -it  empty-dir-demo -c empty-dir-reader -- sh 
+cd /temp
+ls 
+you will see the hello.txt
+
+echo "Hello" > hello-reader.txt you will get the error beacuase it only reader file 
+
+
+
+=================================================================
+
+Persistent Volume Claims 
+Below are **detailed study notes** based on the lecture you shared, with **ASCII block diagrams** that you can save as a `.txt` file. These notes follow the concepts presented in the lecture and expand them for easier understanding.
+
+---
+
+# Persistent Volume Claims (PVC) - Complete Notes
+
+```
+===========================================================
+          KUBERNETES PERSISTENT VOLUME CLAIMS (PVC)
+===========================================================
+```
+
+## What Problem Does PVC Solve?
+
+Containers are **ephemeral**.
+
+If a Pod is deleted:
+
+```
+Pod
+ |
+ +----> Container Files
+ |
+ +----> emptyDir Data
+```
+
+Everything is lost.
+
+Applications like:
+
+* MySQL
+* PostgreSQL
+* MongoDB
+* Jenkins
+* Elasticsearch
+
+cannot lose data.
+
+So Kubernetes introduced **Persistent Storage**.
+
+---
+
+# Kubernetes Storage Components
+
+```
++-------------+
+|    POD      |
++-------------+
+       |
+       |
+       v
++-----------------------+
+| PersistentVolumeClaim |
+|         PVC           |
++-----------------------+
+       |
+       |
+       v
++-----------------------+
+|  PersistentVolume     |
+|         PV            |
++-----------------------+
+       |
+       |
+       v
+Physical Storage
+
+Examples
+
+Local Disk
+AWS EBS
+Azure Disk
+Google PD
+NFS
+Ceph
+SAN
+```
+
+Think of it like this:
+
+```
+Customer
+   |
+   | asks for room
+   v
+Reception (PVC)
+   |
+allocates room
+   v
+Hotel Room (PV)
+```
+
+The customer never directly chooses a room.
+
+The receptionist assigns one.
+
+PVC works exactly like the receptionist.
+
+---
+
+# What is a Persistent Volume (PV)?
+
+A PV is the **actual storage**.
+
+Examples:
+
+```
+100GB SSD
+
+50GB NFS
+
+20GB AWS EBS
+
+500GB SAN
+```
+
+A PV exists inside Kubernetes as a storage resource.
+
+---
+
+# What is a Persistent Volume Claim (PVC)?
+
+PVC is a **request for storage**.
+
+Example:
+
+```
+I need
+
+10GB
+
+ReadWriteOnce
+```
+
+PVC does **not** contain storage.
+
+It only requests storage.
+
+---
+
+# Why Can't Pods Use PV Directly?
+
+Kubernetes does not allow this:
+
+```
+Pod
+ |
+ X
+ |
+PV
+```
+
+Instead:
+
+```
+Pod
+ |
+PVC
+ |
+PV
+ |
+Disk
+```
+
+Reason:
+
+Pods should not know where storage physically exists.
+
+PVC hides those implementation details.
+
+---
+
+# Static Provisioning
+
+Static means:
+
+Administrator creates storage first.
+
+```
+Administrator
+
+Creates PV
+
+      |
+
+      v
+
++----------------+
+| PV-1 (10GB)    |
++----------------+
+
++----------------+
+| PV-2 (20GB)    |
++----------------+
+
++----------------+
+| PV-3 (50GB)    |
++----------------+
+```
+
+Later
+
+Developer creates PVC.
+
+```
+PVC
+
+Need 20GB
+```
+
+Kubernetes searches.
+
+```
+PVC
+
+20GB
+
+      |
+
+      v
+
+PV-1 10GB
+
+No
+
+PV-2 20GB
+
+YES
+
+Bind
+
+PV-3 50GB
+
+Ignored
+```
+
+Finally
+
+```
+Pod
+
+↓
+
+PVC
+
+↓
+
+PV-2
+
+↓
+
+Disk
+```
+
+---
+
+# Static Provisioning Flow
+
+```
+Admin
+
+↓
+
+Create PV
+
+↓
+
+Developer
+
+↓
+
+Create PVC
+
+↓
+
+Kubernetes
+
+↓
+
+Find Matching PV
+
+↓
+
+Bind
+
+↓
+
+Pod Uses Storage
+```
+
+---
+
+# If No Matching PV Exists
+
+Suppose
+
+Existing PVs
+
+```
+5GB
+
+10GB
+```
+
+PVC requests
+
+```
+50GB
+```
+
+Result
+
+```
+PVC
+
+Status
+
+Pending
+```
+
+Because Kubernetes cannot find matching storage.
+
+---
+
+# Dynamic Provisioning
+
+Dynamic provisioning is completely different.
+
+Administrator **does not** create PV.
+
+Instead
+
+Developer creates PVC.
+
+```
+PVC
+
+↓
+
+StorageClass
+
+↓
+
+Automatically Creates PV
+
+↓
+
+Pod Uses PVC
+```
+
+No manual work.
+
+---
+
+# Dynamic Provisioning Diagram
+
+```
+Developer
+
+Creates PVC
+
+↓
+
+StorageClass
+
+↓
+
+Cloud Provider
+
+↓
+
+Creates New Disk
+
+↓
+
+Creates PV
+
+↓
+
+Binds PVC
+
+↓
+
+Pod Starts
+```
+
+This is how AWS EKS
+
+Azure AKS
+
+Google GKE
+
+usually work.
+
+---
+
+# Static vs Dynamic
+
+```
+STATIC
+
+Admin
+
+↓
+
+PV
+
+↓
+
+PVC
+
+↓
+
+Pod
+```
+
+```
+DYNAMIC
+
+PVC
+
+↓
+
+StorageClass
+
+↓
+
+PV
+
+↓
+
+Pod
+```
+
+---
+
+# Relationship Between PV and PVC
+
+One PV
+
+can have
+
+ONLY ONE PVC
+
+```
+PVC
+
+↓
+
+PV
+```
+
+Allowed
+
+---
+
+Not allowed
+
+```
+PVC-1
+
+     \
+
+      \
+
+       PV
+
+      /
+
+     /
+
+PVC-2
+```
+
+One PV cannot serve multiple PVCs.
+
+---
+
+# Wasted Capacity Example
+
+PV
+
+```
+100GB
+```
+
+PVC
+
+```
+10GB
+```
+
+After binding
+
+```
+100GB PV
+
+↓
+
+10GB Used
+
+↓
+
+90GB Cannot Be Used
+```
+
+Because
+
+One PV
+
+One PVC
+
+This problem mostly happens in **Static Provisioning**.
+
+Dynamic provisioning avoids this by creating storage of the requested size.
+
+---
+
+# Reclaim Policies
+
+When PVC is deleted,
+
+What should happen to the PV?
+
+Three options.
+
+---
+
+## 1. Retain
+
+```
+PVC Deleted
+
+↓
+
+PV Stays
+
+↓
+
+Admin Checks Data
+
+↓
+
+Deletes Later
+```
+
+Useful for databases.
+
+---
+
+## 2. Delete (Default)
+
+```
+PVC Deleted
+
+↓
+
+PV Deleted
+
+↓
+
+Cloud Disk Deleted
+```
+
+Saves money.
+
+---
+
+## 3. Recycle (Deprecated)
+
+Old Kubernetes feature.
+
+```
+PVC Deleted
+
+↓
+
+Delete Files
+
+↓
+
+Reuse PV
+```
+
+Not recommended anymore.
+
+---
+
+# Access Modes
+
+## ReadWriteOnce (RWO)
+
+```
+Node-1
+
++------------------+
+
+Pod A
+
+Pod B
+
+Pod C
+
++------------------+
+
+        |
+
+        |
+
+       PV
+```
+
+Many Pods
+
+Same Node
+
+Read Write
+
+Allowed
+
+Different Node
+
+Not Allowed
+
+---
+
+## ReadOnlyMany (ROX)
+
+```
+Node1
+
+↓
+
+Read
+
+PV
+
+↑
+
+Node2
+
+↓
+
+Read
+
+↑
+
+Node3
+```
+
+Everyone can read.
+
+Nobody writes.
+
+---
+
+## ReadWriteMany (RWX)
+
+```
+Node1
+
+↓
+
+Read Write
+
+PV
+
+↑
+
+Node2
+
+↓
+
+Read Write
+
+↑
+
+Node3
+```
+
+Everyone can read and write.
+
+Usually supported by
+
+NFS
+
+CephFS
+
+Azure Files
+
+Amazon EFS
+
+---
+
+## ReadWriteOncePod (RWOP)
+
+```
+Pod A
+
+↓
+
+PV
+
+Pod B
+
+×
+
+Denied
+```
+
+Only one Pod can use it.
+
+Even if another Pod is on the same node,
+
+it cannot mount it.
+
+---
+
+# Best-Effort Matching (Static Provisioning)
+
+Suppose
+
+PVC asks
+
+```
+20GB
+
+ReadWriteOnce
+```
+
+Available PVs
+
+```
+10GB RWO
+
+50GB RWX
+
+30GB ROX
+```
+
+No exact match.
+
+PVC stays Pending.
+
+---
+
+# Dynamic Provisioning Always Creates Storage
+
+PVC
+
+```
+Need
+
+20GB
+
+ReadWriteOnce
+```
+
+StorageClass
+
+```
+AWS EBS
+```
+
+Automatically
+
+```
+Creates
+
+20GB Disk
+
+↓
+
+PV
+
+↓
+
+PVC Bound
+```
+
+---
+
+# Production Example 1 - MySQL
+
+```
+MySQL Pod
+
+↓
+
+PVC
+
+↓
+
+AWS EBS
+
+↓
+
+Database Files
+```
+
+If Pod crashes
+
+```
+Delete Pod
+
+↓
+
+Create New Pod
+
+↓
+
+Attach Same Disk
+
+↓
+
+Database Continues
+```
+
+No data loss.
+
+---
+
+# Production Example 2 - Jenkins
+
+```
+Jenkins Pod
+
+↓
+
+PVC
+
+↓
+
+Build History
+
+Plugins
+
+Workspace
+```
+
+Without PVC
+
+```
+Pod Deleted
+
+↓
+
+Everything Lost
+```
+
+---
+
+# Production Example 3 - Elasticsearch
+
+```
+Elasticsearch Pod
+
+↓
+
+PVC
+
+↓
+
+Indices
+
+↓
+
+Disk
+```
+
+---
+
+# Interview Questions
+
+**Q1. Can Pod directly use PV?**
+
+No.
+
+```
+Pod
+
+↓
+
+PVC
+
+↓
+
+PV
+```
+
+---
+
+**Q2. Difference between PV and PVC?**
+
+PV
+
+```
+Actual Storage
+```
+
+PVC
+
+```
+Storage Request
+```
+
+---
+
+**Q3. Static vs Dynamic?**
+
+Static
+
+```
+Admin Creates PV
+```
+
+Dynamic
+
+```
+PVC Creates PV Automatically
+```
+
+---
+
+**Q4. Why PVC?**
+
+* Decouples Pods from storage
+* Makes storage portable
+* Supports dynamic provisioning
+
+---
+
+**Q5. Why is StorageClass used?**
+
+StorageClass defines **how** Kubernetes should dynamically create storage (for example, AWS EBS, Azure Disk, or Google Persistent Disk).
+
+---
+
+# Complete Kubernetes Storage Architecture
+
+```
+                     Kubernetes Cluster
+
++---------------------------------------------------------+
+
+          Developer
+
+               |
+
+               v
+
+     +----------------------+
+
+     |   Create PVC         |
+
+     +----------------------+
+
+               |
+
+               v
+
+     +----------------------+
+
+     | StorageClass         |
+
+     +----------------------+
+
+               |
+
+               v
+
+     +----------------------+
+
+     | Persistent Volume    |
+
+     +----------------------+
+
+               |
+
+               v
+
+      AWS EBS / Azure Disk / GCE PD / NFS
+
+               |
+
+               v
+
+     +----------------------+
+
+     |        Pod           |
+
+     +----------------------+
+
+               |
+
+               v
+
+          Application
+
+           (MySQL)
+
++---------------------------------------------------------+
+```
+
+---
+
+# Key Points to Remember
+
+```
+PV = Actual Storage
+
+PVC = Request for Storage
+
+StorageClass = Template used to create storage dynamically
+
+Pod always uses PVC
+
+PVC binds to one PV
+
+One PV binds to one PVC
+
+Dynamic Provisioning is preferred in production
+
+Delete is the default reclaim policy
+
+RWO = One Node
+
+RWX = Many Nodes
+
+ROX = Many Nodes (Read Only)
+
+RWOP = One Pod Only
+```
+
+These notes cover the concepts shown in your lecture and expand them with additional explanations and block diagrams to make the storage flow easier to visualize and revise.
+
+
+
+Hands on PVC
+
+kubectl get pods
+
+touch local-vol-example.yaml 
+
+Your YAML mixes **`local`** and **`hostPath`** volumes. A PersistentVolume can only use **one volume source**. If you're creating a **Local PersistentVolume**, use `local` with `nodeAffinity` and **remove `hostPath`**.
+
+Here's the corrected YAML:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: local-volume
+spec:
+  capacity:
+    storage: 1Gi
+
+  volumeMode: Filesystem
+
+  accessModes:
+    - ReadWriteOnce
+
+  persistentVolumeReclaimPolicy: Retain
+
+  storageClassName: local-storage
+
+  local:
+    path: /mnt/disk/local1   # This directory must exist on the node.
+
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+```
+
+### Before applying this PV
+
+**1. Create the directory on the node**
+
+```bash
+sudo mkdir -p /mnt/disk/local1
+sudo chmod 777 /mnt/disk/local1
+```
+
+For Minikube:
+
+```bash
+minikube ssh
+sudo mkdir -p /mnt/disk/local1
+sudo chmod 777 /mnt/disk/local1
+exit
+```
+
+---
+
+**2. Get the node label**
+
+```bash
+kubectl get nodes --show-labels
+```
+
+or
+
+```bash
+kubectl describe node minikube
+```
+
+Look for a label like:
+
+```text
+kubernetes.io/hostname=minikube
+```
+
+Use that value in:
+
+```yaml
+values:
+  - minikube
+```
+
+---
+
+**3. Create the StorageClass**
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+```
+
+---
+
+**4. Create the PersistentVolumeClaim**
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: local-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-storage
+  resources:
+    requests:
+      storage: 1Gi
+```
+
+### Difference between `local` and `hostPath`
+
+| Feature                    | `hostPath`                                     | `local`                |
+| -------------------------- | ---------------------------------------------- | ---------------------- |
+| Use case                   | Single-node testing (Minikube, Docker Desktop) | Production local disks |
+| Requires `nodeAffinity`    | ❌ No                                           | ✅ Yes                  |
+| Scheduler aware            | ❌ No                                           | ✅ Yes                  |
+| Recommended for production | ❌ No                                           | ✅ Yes                  |
+
+**Key corrections to your YAML:**
+
+* ❌ Remove `hostPath` when using `local`.
+* ✅ `path` under `local` must exist on the target node.
+* ✅ Use the node label key `kubernetes.io/hostname`.
+* ✅ Format `values` as a YAML list:
+
+  ```yaml
+  values:
+    - minikube
+  ```
+* ✅ Create a `StorageClass` with `provisioner: kubernetes.io/no-provisioner` for local volumes.
+
+
+Below is the same YAML with comments explaining **what each field does**. This is useful for interview preparation and understanding the purpose of every field.
+
+```yaml
+apiVersion: v1                    # API version used for PersistentVolume
+kind: PersistentVolume            # Defines this resource as a PersistentVolume (PV)
+
+metadata:
+  name: local-volume              # Name of the PersistentVolume
+
+spec:
+  capacity:
+    storage: 1Gi                  # Total storage capacity provided by this PV
+
+  volumeMode: Filesystem          # Exposes the volume as a mounted filesystem
+                                  # (Other option: Block)
+
+  accessModes:
+    - ReadWriteOnce               # Volume can be mounted as read-write by only one node
+
+  persistentVolumeReclaimPolicy: Retain
+                                  # What happens when the PVC is deleted
+                                  # Retain -> Keeps the data
+                                  # Delete -> Deletes the underlying storage (if supported)
+                                  # Recycle -> Deprecated
+
+  storageClassName: local-storage # StorageClass this PV belongs to
+                                  # PVC must use the same StorageClass to bind
+
+  local:
+    path: /mnt/disk/local1        # Directory on the node where data is stored
+                                  # This directory MUST already exist on the node
+
+  nodeAffinity:                   # Restricts this PV to a specific node
+                                  # Required for Local PersistentVolumes
+
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+                                  # Node label used to identify the node
+                                  # Find it using:
+                                  # kubectl get nodes --show-labels
+                                  # or
+                                  # kubectl describe node <node-name>
+
+              operator: In        # Match if the node label value is in the list below
+
+              values:
+                - minikube        # Only the node whose hostname label is "minikube"
+                                  # can use this PersistentVolume
+```
+
+### Flow of how this works
+
+```text
+Node (minikube)
+│
+├── /mnt/disk/local1  <-- Actual directory on the node
+│
+└── PersistentVolume (PV)
+      │
+      └── StorageClass = local-storage
+             │
+             └── PersistentVolumeClaim (PVC)
+                    │
+                    └── Pod
+                           │
+                           └── Mounted inside the container
+```
+
+### Interview Questions
+
+**Q1. Why is `nodeAffinity` mandatory for Local PersistentVolumes?**
+
+* Because the storage exists on **only one node**. Kubernetes needs to know which node contains the data so it schedules the Pod there.
+
+**Q2. Why do we specify `storageClassName`?**
+
+* It ensures that only PVCs requesting the same StorageClass can bind to this PV.
+
+**Q3. What happens if `/mnt/disk/local1` does not exist?**
+
+* The PV may be created, but Pods using it will fail to mount the volume until the directory exists.
+
+**Q4. Why use `Retain`?**
+
+* It preserves the data even after the PVC is deleted, allowing manual recovery or reuse.
+
+**Q5. Why use `ReadWriteOnce`?**
+
+* A local disk is attached to a single node, so it can only be mounted as read-write by one node at a time.
+
+
+Below are your notes rewritten with explanations and comments for each step.
+
+---
+
+# Step 1: Verify the PersistentVolume (PV)
+
+Apply the PV YAML.
+
+```bash
+kubectl apply -f local-vol-example.yaml
+```
+
+Check whether the PV has been created.
+
+```bash
+kubectl get pv
+```
+
+Expected output:
+
+```text
+NAME           CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      STORAGECLASS
+local-volume   1Gi        RWO            Retain           Available   local-storage
+```
+
+Get detailed information about the PV.
+
+```bash
+kubectl describe pv local-volume
+```
+
+This shows:
+
+* Capacity
+* Access Mode
+* StorageClass
+* Node Affinity
+* Events
+* Current Status (Available/Bound)
+
+---
+
+# Step 2: Create a PersistentVolumeClaim (PVC)
+
+Create a new file.
+
+```bash
+touch local-pvc.yaml
+```
+
+Add the following YAML.
+
+```yaml
+apiVersion: v1                         # Kubernetes API version
+kind: PersistentVolumeClaim            # Creates a PersistentVolumeClaim (PVC)
+
+metadata:
+  name: local-volume-claim             # Name of the PVC
+
+spec:
+  accessModes:
+    - ReadWriteOnce                    # Request ReadWriteOnce access
+
+  storageClassName: local-storage      # Must match the PV StorageClass
+
+  resources:
+    requests:
+      storage: 2Gi                     # Requesting 2Gi of storage
+
+  volumeMode: Filesystem               # Request a filesystem volume
+```
+
+---
+
+# Step 3: Apply the PVC
+
+```bash
+kubectl apply -f local-pvc.yaml
+```
+
+Check the PVC.
+
+```bash
+kubectl get pvc
+```
+
+Describe the PVC.
+
+```bash
+kubectl describe pvc local-volume-claim
+```
+
+---
+
+# Why does it fail?
+
+Your **PersistentVolume (PV)** is:
+
+```text
+1Gi
+```
+
+But your **PersistentVolumeClaim (PVC)** requests:
+
+```text
+2Gi
+```
+
+Kubernetes **cannot bind** a PVC requesting more storage than the PV provides.
+
+Expected status:
+
+```text
+STATUS: Pending
+```
+
+Events may include messages similar to:
+
+```text
+waiting for a volume to be created
+no persistent volumes available for this claim
+```
+
+or
+
+```text
+requested storage exceeds available capacity
+```
+
+---
+
+# Step 4: Delete the PVC
+
+```bash
+kubectl delete pvc local-volume-claim
+```
+
+---
+
+# Step 5: Update the PVC
+
+Modify the storage request to **1Gi**, matching the PV.
+
+```yaml
+apiVersion: v1                         # Kubernetes API version
+kind: PersistentVolumeClaim            # Creates a PVC
+
+metadata:
+  name: local-volume-claim             # PVC name
+
+spec:
+  accessModes:
+    - ReadWriteOnce                    # Same access mode as the PV
+
+  storageClassName: local-storage      # Must match the PV StorageClass
+
+  resources:
+    requests:
+      storage: 1Gi                     # Matches the PV capacity
+
+  volumeMode: Filesystem               # Filesystem volume
+```
+
+---
+
+# Step 6: Apply the PVC Again
+
+```bash
+kubectl apply -f local-pvc.yaml
+```
+
+Check the PVC.
+
+```bash
+kubectl get pvc
+```
+
+Expected output:
+
+```text
+NAME                 STATUS   VOLUME         CAPACITY   ACCESS MODES   STORAGECLASS
+local-volume-claim   Bound    local-volume   1Gi        RWO            local-storage
+```
+
+---
+
+# Verify the Binding
+
+Describe the PVC.
+
+```bash
+kubectl describe pvc local-volume-claim
+```
+
+Describe the PV.
+
+```bash
+kubectl describe pv local-volume
+```
+
+You should see:
+
+```text
+Status: Bound
+Claim: default/local-volume-claim
+```
+
+---
+
+# What does `STATUS=Bound` mean?
+
+When the PVC status is **Bound**, it means:
+
+* ✅ Kubernetes found a matching PersistentVolume.
+* ✅ The PV and PVC are successfully linked.
+* ✅ A Pod can now mount this PVC and use the storage.
+
+---
+
+# Interview Questions
+
+### Q1. Why did the first PVC fail?
+
+Because the PVC requested **2Gi**, but the available PV had only **1Gi** of storage.
+
+---
+
+### Q2. What conditions must match for a PV and PVC to bind?
+
+* StorageClass
+* Requested storage must be **less than or equal to** the PV capacity
+* AccessModes must be compatible
+* VolumeMode must match
+
+---
+
+### Q3. What does `Pending` mean?
+
+The PVC is waiting for a suitable PersistentVolume and has not yet been bound.
+
+---
+
+### Q4. What does `Bound` mean?
+
+The PVC has successfully claimed a matching PersistentVolume and is ready for use by Pods.
+
+---
+
+### Q5. Can a PVC request less storage than the PV?
+
+Yes. For example:
+
+* PV = **10Gi**
+* PVC = **5Gi**
+
+The PVC can bind successfully. The remaining capacity is not automatically available to another PVC because a PV can be bound to only one PVC at a time.
+
+
+
