@@ -6923,6 +6923,486 @@ Container:
 
 Both paths reference the same underlying data.
 
+# Hands-on: Deleting Pod, PVC, and PV – Understanding the `persistentVolumeReclaimPolicy`
+
+This lab demonstrates what happens to your data when you delete Pods, PVCs, and PVs, and how the **`persistentVolumeReclaimPolicy`** affects the underlying storage.
+
+---
+
+# Learning Objectives
+
+By the end of this lab, you will understand:
+
+* What happens when you delete a Pod.
+* What happens when you delete a PVC.
+* What happens when you delete a PV.
+* Why your data is still present after deletion.
+* The difference between `Retain` and `Delete`.
+* Why `Delete` works only for storage providers that support automatic cleanup (such as EBS, GCE PD, Azure Disk, etc.), but **not** for a manually managed Local PV.
+
+---
+
+# Current Architecture
+
+```text
+                     Kubernetes Cluster
+
++------------------------------------------------------+
+
+             PersistentVolume (PV)
+        +-----------------------------+
+        | local-volume                |
+        | ReclaimPolicy = Retain      |
+        | Storage = 1Gi               |
+        +-------------+---------------+
+                      |
+                   Bound
+                      |
+        +-------------v---------------+
+        | PersistentVolumeClaim (PVC) |
+        | local-volume-claim          |
+        +-------------+---------------+
+                      |
+          Mounted inside Pods
+          /mnt/local
+          /mnt/local2
+          +-----------+-----------+
+          |                       |
+     local-vol-pod         local-vol-pod2
+
+                      |
+                      V
+
+           Node Filesystem
+     /mnt/disks/local1
+          hello.txt
+```
+
+---
+
+# Step 1: Verify Existing Resources
+
+Check that everything exists before deleting.
+
+```bash
+kubectl get pv
+kubectl get pvc
+kubectl get pods
+```
+
+Expected output:
+
+```text
+PV
+local-volume
+
+PVC
+local-volume-claim
+
+Pods
+local-vol-pod
+local-vol-pod2
+```
+
+---
+
+# Step 2: Delete Both Pods
+
+Delete the Pods.
+
+```bash
+kubectl delete pod --force local-vol-pod local-vol-pod2
+```
+
+> **Note:** Your command used `local-vol-example`, which is the YAML filename, not a Pod name. Use the actual Pod names (`local-vol-pod` and `local-vol-pod2`).
+
+Verify:
+
+```bash
+kubectl get pods
+```
+
+Expected:
+
+```text
+No resources found
+```
+
+---
+
+# What happened?
+
+Only the **containers** were deleted.
+
+The following still exist:
+
+* ✅ PersistentVolume
+* ✅ PersistentVolumeClaim
+* ✅ Actual data stored on the node
+
+The storage is independent of the Pod lifecycle.
+
+---
+
+# Step 3: Delete the PVC
+
+```bash
+kubectl delete pvc local-volume-claim
+```
+
+Check again:
+
+```bash
+kubectl get pvc
+```
+
+Expected:
+
+```text
+No resources found
+```
+
+---
+
+# Check the PV
+
+```bash
+kubectl get pv
+```
+
+Expected:
+
+```text
+NAME            STATUS     RECLAIM POLICY
+local-volume    Released   Retain
+```
+
+---
+
+# Why is the PV still there?
+
+Because your PV contains:
+
+```yaml
+persistentVolumeReclaimPolicy: Retain
+```
+
+This tells Kubernetes:
+
+> "When the PVC is deleted, do **not** delete the storage. Keep the data for manual recovery or reuse."
+
+The PV changes from:
+
+```text
+Bound
+```
+
+to
+
+```text
+Released
+```
+
+**Released** means:
+
+* The previous PVC has been deleted.
+* The PV still exists.
+* The data is still present.
+* Kubernetes will not automatically reuse this PV until an administrator cleans it up or recreates it appropriately.
+
+---
+
+# Step 4: Verify the Data Still Exists
+
+Log into Minikube:
+
+```bash
+minikube ssh
+```
+
+Navigate to the directory:
+
+```bash
+cd /mnt/disks/local1
+```
+
+List the files:
+
+```bash
+ls -l
+```
+
+Expected:
+
+```text
+hello.txt
+```
+
+Read the file:
+
+```bash
+cat hello.txt
+```
+
+Output:
+
+```text
+Hello
+```
+
+---
+
+# Why is the file still there?
+
+The file is stored on the node:
+
+```text
+/mnt/disks/local1
+```
+
+Deleting the PVC only removes the Kubernetes claim.
+
+It does **not** delete the actual directory or its contents when the reclaim policy is `Retain`.
+
+---
+
+# Step 5: Recreate Everything
+
+Apply the YAML again:
+
+```bash
+kubectl apply -f local-vol-example.yaml
+```
+
+Verify:
+
+```bash
+kubectl get pv
+kubectl get pvc
+kubectl get pods
+```
+
+If the PV is available for binding (or recreated after cleanup), the PVC can bind and the Pod can mount the storage again.
+
+Enter the Pod:
+
+```bash
+kubectl exec -it local-vol-pod -- sh
+```
+
+Read the file:
+
+```bash
+cat /mnt/local/hello.txt
+```
+
+Output:
+
+```text
+Hello
+```
+
+The data is still available because it never left the node.
+
+---
+
+# Step 6: Delete Everything
+
+Delete all resources defined in the manifest:
+
+```bash
+kubectl delete --force -f local-vol-example.yaml
+```
+
+Verify:
+
+```bash
+kubectl get pv
+kubectl get pvc
+kubectl get pods
+```
+
+You should see:
+
+```text
+No resources found
+```
+
+for the Pods and PVC. The PV may also be removed if it was part of the manifest deletion.
+
+---
+
+# Check the Node
+
+SSH into Minikube:
+
+```bash
+minikube ssh
+```
+
+Go to the directory:
+
+```bash
+cd /mnt/disks/local1
+```
+
+List the contents:
+
+```bash
+ls -l
+```
+
+Expected:
+
+```text
+hello.txt
+```
+
+The directory and file still exist because Kubernetes does **not** remove the underlying directory for a manually managed Local PersistentVolume.
+
+---
+
+# Why Didn't the Data Get Deleted?
+
+The reclaim policy controls what Kubernetes does with the **PersistentVolume object**, but for a manually created Local PV, Kubernetes does not own the directory on your node.
+
+The directory:
+
+```text
+/mnt/disks/local1
+```
+
+is simply part of the node's filesystem.
+
+Kubernetes cannot safely remove arbitrary directories from a machine.
+
+---
+
+# What If We Change the Reclaim Policy?
+
+Update the PV:
+
+```yaml
+persistentVolumeReclaimPolicy: Delete
+```
+
+Recreate the resources and repeat the deletion steps.
+
+---
+
+# Will the Directory Be Deleted?
+
+For a manually created Local PersistentVolume:
+
+**No.**
+
+Even with:
+
+```yaml
+persistentVolumeReclaimPolicy: Delete
+```
+
+the directory:
+
+```text
+/mnt/disks/local1
+```
+
+will remain unless **you remove it yourself**.
+
+For example:
+
+```bash
+sudo rm -rf /mnt/disks/local1
+```
+
+---
+
+# When Does `Delete` Actually Remove Storage?
+
+`Delete` is intended for storage systems managed by CSI drivers or cloud providers.
+
+Examples:
+
+| Storage Type               | `Delete` Behavior                                     |
+| -------------------------- | ----------------------------------------------------- |
+| AWS EBS                    | Deletes the EBS volume automatically                  |
+| GCE Persistent Disk        | Deletes the disk                                      |
+| Azure Disk                 | Deletes the managed disk                              |
+| Azure Files                | Deletes the file share (driver dependent)             |
+| Dynamic NFS Provisioner    | Deletes the provisioned directory (if supported)      |
+| **Local PersistentVolume** | **Does not delete the local directory automatically** |
+
+---
+
+# Resource Lifecycle
+
+```text
+Create PV
+     │
+     ▼
+Create PVC
+     │
+     ▼
+PVC becomes Bound
+     │
+     ▼
+Pod mounts PVC
+     │
+     ▼
+Application writes hello.txt
+     │
+     ▼
+Delete Pod
+     │
+     ├── Pod removed
+     └── Data still exists
+     │
+     ▼
+Delete PVC
+     │
+     ├── Claim removed
+     ├── PV becomes Released (Retain)
+     └── Data still exists
+     │
+     ▼
+Delete PV
+     │
+     ├── PV object removed
+     └── Local directory still exists
+```
+
+---
+
+# Key Interview Questions
+
+### Q1. What happens when you delete a Pod?
+
+Only the Pod and its containers are deleted. The PersistentVolume and the data remain.
+
+---
+
+### Q2. What happens when you delete a PVC with `Retain`?
+
+The PVC is removed, the PV enters the `Released` state, and the underlying data is preserved.
+
+---
+
+### Q3. What does the `Released` state mean?
+
+It means the PV is no longer bound to a PVC, but it still contains the previous claim's data and requires administrator action before being reused.
+
+---
+
+### Q4. Does deleting a Local PersistentVolume remove the local directory?
+
+No. Kubernetes removes the PV resource, but it does not delete the directory on the node.
+
+---
+
+### Q5. Does `persistentVolumeReclaimPolicy: Delete` always delete storage?
+
+No. It depends on the storage backend. Cloud-managed volumes (like AWS EBS or Azure Disk) can be deleted automatically through their CSI drivers, while a manually managed Local PersistentVolume cannot.
 
 
 
