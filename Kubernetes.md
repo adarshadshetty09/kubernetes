@@ -7406,3 +7406,600 @@ No. It depends on the storage backend. Cloud-managed volumes (like AWS EBS or Az
 
 
 
+# Hands-on: Dynamic Provisioning of Persistent Volumes (StorageClass)
+
+In this lab, you'll learn how **Dynamic Provisioning** works in Kubernetes.
+
+Unlike a **Static PV**, where you manually create a PersistentVolume, with **Dynamic Provisioning** Kubernetes automatically creates a PersistentVolume when a PersistentVolumeClaim (PVC) is created.
+
+---
+
+# Learning Objectives
+
+After completing this lab, you'll understand:
+
+* What Dynamic Provisioning is.
+* What a StorageClass is.
+* How Kubernetes automatically creates a PV.
+* Why Dynamic Provisioning is preferred in production.
+* How to inspect dynamically created volumes.
+* What happens during deletion.
+* Difference between Static and Dynamic Provisioning.
+
+---
+
+# Static vs Dynamic Provisioning
+
+## Static Provisioning
+
+Administrator creates the PV first.
+
+```text
+Administrator
+      │
+      ▼
+Create PV
+      │
+      ▼
+User creates PVC
+      │
+      ▼
+PVC binds to existing PV
+```
+
+Example:
+
+```text
+PV ---> PVC ---> Pod
+```
+
+---
+
+## Dynamic Provisioning
+
+Administrator only creates a StorageClass.
+
+Kubernetes creates the PV automatically.
+
+```text
+User creates PVC
+       │
+       ▼
+StorageClass
+       │
+       ▼
+CSI Provisioner
+       │
+       ▼
+PV is created automatically
+       │
+       ▼
+PVC becomes Bound
+```
+
+---
+
+# Step 1: View StorageClasses
+
+List available StorageClasses.
+
+```bash
+kubectl get storageclass
+```
+
+Example output:
+
+```text
+NAME                 PROVISIONER                RECLAIMPOLICY
+standard (default)   k8s.io/minikube-hostpath   Delete
+```
+
+### Explanation
+
+| Column        | Meaning                                            |
+| ------------- | -------------------------------------------------- |
+| NAME          | StorageClass name                                  |
+| DEFAULT       | Used automatically if no StorageClass is specified |
+| PROVISIONER   | Plugin responsible for creating storage            |
+| RECLAIMPOLICY | What happens when the PVC is deleted               |
+
+---
+
+# Step 2: Describe the StorageClass
+
+```bash
+kubectl describe storageclass standard
+```
+
+Example output:
+
+```text
+Name: standard
+
+Provisioner:
+k8s.io/minikube-hostpath
+
+Reclaim Policy:
+Delete
+
+VolumeBindingMode:
+Immediate
+```
+
+## What do these fields mean?
+
+### Provisioner
+
+```text
+k8s.io/minikube-hostpath
+```
+
+This is the component responsible for creating storage automatically.
+
+On Minikube it creates directories under:
+
+```text
+/tmp/hostpath-provisioner/
+```
+
+On AWS EKS you would see something like:
+
+```text
+ebs.csi.aws.com
+```
+
+meaning Kubernetes will create an EBS volume.
+
+---
+
+### ReclaimPolicy
+
+```text
+Delete
+```
+
+When the PVC is deleted,
+
+the dynamically created storage is also deleted.
+
+---
+
+### VolumeBindingMode
+
+Usually
+
+```text
+Immediate
+```
+
+Meaning Kubernetes creates the storage immediately after the PVC is created.
+
+---
+
+# Step 3: Create a PVC
+
+Create
+
+```text
+dynamic.yml
+```
+
+```yaml
+apiVersion: v1                    # Kubernetes API version
+kind: PersistentVolumeClaim       # Creates only a PVC
+
+metadata:
+  name: dynamic-pv-example        # PVC name
+
+spec:
+
+  resources:
+    requests:
+      storage: 1Gi                # Request 1Gi storage
+
+  volumeMode: Filesystem          # Filesystem volume
+
+  storageClassName: standard      # Use default StorageClass
+
+  accessModes:
+    - ReadWriteOnce               # Read/write from one node
+```
+
+Notice:
+
+There is **NO PersistentVolume** in this YAML.
+
+---
+
+# Step 4: Apply
+
+```bash
+kubectl apply -f dynamic.yml
+```
+
+Output
+
+```text
+persistentvolumeclaim/dynamic-pv-example created
+```
+
+---
+
+# Step 5: Check the PVC
+
+```bash
+kubectl get pvc
+```
+
+Example
+
+```text
+NAME                 STATUS   VOLUME                                     CAPACITY
+
+dynamic-pv-example   Bound    pvc-a2b5f41b-acde-46ef-acde-123456789abc   1Gi
+```
+
+Notice
+
+The PVC is already
+
+```text
+Bound
+```
+
+because Kubernetes created a PV automatically.
+
+---
+
+# Step 6: Check the PV
+
+```bash
+kubectl get pv
+```
+
+Example
+
+```text
+NAME
+
+pvc-a2b5f41b-acde-46ef-acde-123456789abc
+```
+
+Notice
+
+The PV name was automatically generated.
+
+You never created it manually.
+
+---
+
+# Step 7: Describe the PV
+
+```bash
+kubectl describe pv pvc-a2b5f41b-acde-46ef-acde-123456789abc
+```
+
+You'll see
+
+```text
+StorageClass:
+standard
+
+Reclaim Policy:
+Delete
+
+Source:
+HostPath
+```
+
+This confirms the PV was dynamically provisioned.
+
+---
+
+# Step 8: Verify on Minikube
+
+SSH into Minikube
+
+```bash
+minikube ssh
+```
+
+Navigate to
+
+```bash
+cd /tmp/hostpath-provisioner/default
+```
+
+List files
+
+```bash
+ls
+```
+
+Example
+
+```text
+dynamic-pv-example
+```
+
+Why?
+
+The Minikube hostpath provisioner created a directory for your PVC.
+
+---
+
+# Verify StorageClass YAML
+
+```bash
+kubectl get storageclass standard -o yaml
+```
+
+Example
+
+```yaml
+provisioner: k8s.io/minikube-hostpath
+
+reclaimPolicy: Delete
+
+volumeBindingMode: Immediate
+```
+
+This is exactly how Kubernetes knew how to create the volume.
+
+---
+
+# Complete Architecture
+
+```text
+                    PVC
+
+      dynamic-pv-example
+               │
+               ▼
+
+      StorageClass standard
+               │
+               ▼
+
+HostPath Provisioner
+(k8s.io/minikube-hostpath)
+               │
+               ▼
+
+Automatically creates
+
+PersistentVolume
+
+               │
+               ▼
+
+/tmp/hostpath-provisioner/default/
+```
+
+---
+
+# Deletion Process
+
+This is where Dynamic Provisioning differs from Static Provisioning.
+
+---
+
+# Step 1 Delete the PVC
+
+Delete the manifest (which contains only the PVC):
+
+```bash
+kubectl delete -f dynamic.yml
+```
+
+Or:
+
+```bash
+kubectl delete pvc dynamic-pv-example
+```
+
+---
+
+# Verify
+
+```bash
+kubectl get pvc
+```
+
+Output
+
+```text
+No resources found
+```
+
+---
+
+# Step 2 Check the PV
+
+```bash
+kubectl get pv
+```
+
+You'll typically see:
+
+```text
+No resources found
+```
+
+or the PV disappears shortly after.
+
+### Why?
+
+The StorageClass has:
+
+```yaml
+reclaimPolicy: Delete
+```
+
+When the PVC is deleted:
+
+1. Kubernetes deletes the PVC.
+2. The StorageClass provisioner is notified.
+3. The provisioner deletes the dynamically created storage.
+4. The PV object is deleted automatically.
+
+Unlike a manually created Local PV, you **do not** manually delete the PV.
+
+---
+
+# Step 3 Verify on Minikube
+
+SSH:
+
+```bash
+minikube ssh
+```
+
+Go to:
+
+```bash
+cd /tmp/hostpath-provisioner/default
+```
+
+Run:
+
+```bash
+ls
+```
+
+The directory created for `dynamic-pv-example` should no longer exist.
+
+---
+
+# What if the PV is Still Present?
+
+Occasionally there may be a short delay before the provisioner finishes cleanup.
+
+Run:
+
+```bash
+kubectl get pv
+```
+
+again after a few seconds.
+
+---
+
+# Should You Delete the PV First?
+
+**No.**
+
+Correct order:
+
+```text
+Delete PVC
+      │
+      ▼
+Provisioner deletes storage
+      │
+      ▼
+Provisioner deletes PV
+```
+
+Deleting the PV first can leave the PVC in an unusable state and may interfere with the provisioner's cleanup process.
+
+---
+
+# Dynamic Provisioning Lifecycle
+
+```text
+User creates PVC
+        │
+        ▼
+StorageClass
+        │
+        ▼
+Provisioner
+        │
+        ▼
+Creates PV automatically
+        │
+        ▼
+PVC becomes Bound
+        │
+        ▼
+Pod uses PVC
+        │
+        ▼
+Delete PVC
+        │
+        ▼
+Provisioner deletes storage
+        │
+        ▼
+PV removed automatically
+```
+
+---
+
+# Static vs Dynamic Provisioning
+
+| Feature               | Static Provisioning              | Dynamic Provisioning      |
+| --------------------- | -------------------------------- | ------------------------- |
+| Who creates the PV?   | Administrator                    | Kubernetes automatically  |
+| StorageClass required | Optional                         | Required                  |
+| Manual PV YAML        | Yes                              | No                        |
+| PVC creates PV        | No                               | Yes                       |
+| Production usage      | Rare                             | Very common               |
+| Best for              | Pre-existing storage, migrations | Cloud-native applications |
+
+---
+
+# Real-World Use Cases
+
+### Static Provisioning
+
+Use when:
+
+* You already have an existing NFS share.
+* You need to reuse a specific local disk.
+* You have data that must not be recreated automatically.
+* Migrating legacy applications with pre-populated storage.
+
+---
+
+### Dynamic Provisioning
+
+Use when:
+
+* Running applications on AWS EKS, Azure AKS, or GKE.
+* Deploying databases such as MySQL, PostgreSQL, MongoDB, or Cassandra.
+* Using StatefulSets that need automatically provisioned volumes.
+* Teams need storage without waiting for an administrator to manually create PVs.
+
+---
+
+# Interview Questions
+
+### Q1. What is Dynamic Provisioning?
+
+Dynamic Provisioning allows Kubernetes to automatically create a PersistentVolume when a PersistentVolumeClaim is created, using a StorageClass.
+
+---
+
+### Q2. Why do we need a StorageClass?
+
+A StorageClass defines **how** and **where** storage should be provisioned, including the provisioner, reclaim policy, and binding mode.
+
+---
+
+### Q3. Does a dynamically provisioned PV need a separate YAML file?
+
+No. You create only the PVC. Kubernetes creates the PV automatically.
+
+---
+
+### Q4. Why should the PVC be deleted before the PV?
+
+The PVC is the trigger for the StorageClass provisioner. Deleting the PVC allows the provisioner to clean up the underlying storage and remove the PV automatically when the reclaim policy is `Delete`.
+
+---
+
+### Q5. Why doesn't Dynamic Provisioning require a manual PV?
+
+Because the StorageClass and its provisioner handle the creation, binding, and cleanup of the PersistentVolume automatically, simplifying storage management in production Kubernetes clusters.
