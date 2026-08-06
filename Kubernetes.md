@@ -6094,3 +6094,835 @@ The PVC can bind successfully. The remaining capacity is not automatically avail
 
 
 
+Once your **PersistentVolume (PV)** and **PersistentVolumeClaim (PVC)** are in the **Bound** state, you can mount the PVC into a Pod.
+
+---
+
+# Step 1: Verify the PVC is Bound
+
+```bash
+kubectl get pvc
+```
+
+Expected output:
+
+```text
+NAME                 STATUS   VOLUME         CAPACITY   ACCESS MODES   STORAGECLASS
+local-volume-claim   Bound    local-volume   1Gi        RWO            local-storage
+```
+
+If the status is **Bound**, you're ready to use it in a Pod.
+
+---
+
+# Step 2: Create a Pod YAML
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-pod
+spec:
+  containers:
+    - name: nginx
+      image: nginx:latest
+
+      volumeMounts:
+        - name: my-storage
+          mountPath: /usr/share/nginx/html
+          # Directory inside the container where the PVC is mounted
+
+  volumes:
+    - name: my-storage
+      persistentVolumeClaim:
+        claimName: local-volume-claim
+        # Name of the PVC to attach
+```
+
+---
+
+# Step 3: Apply the Pod
+
+```bash
+kubectl apply -f pod.yaml
+```
+
+Verify the Pod is running:
+
+```bash
+kubectl get pods
+```
+
+Expected output:
+
+```text
+NAME        READY   STATUS    RESTARTS   AGE
+nginx-pod   1/1     Running   0          20s
+```
+
+---
+
+# Step 4: Verify the Volume is Mounted
+
+Open a shell inside the Pod:
+
+```bash
+kubectl exec -it nginx-pod -- /bin/bash
+```
+
+If `/bin/bash` isn't available:
+
+```bash
+kubectl exec -it nginx-pod -- /bin/sh
+```
+
+Check the mounted directory:
+
+```bash
+cd /usr/share/nginx/html
+ls -l
+```
+
+Create a test file:
+
+```bash
+echo "Hello Kubernetes" > test.txt
+```
+
+Verify it exists:
+
+```bash
+cat test.txt
+```
+
+Output:
+
+```text
+Hello Kubernetes
+```
+
+---
+
+# Step 5: Verify the Data on the Node
+
+Since this is a **Local PersistentVolume**, the data is stored on the node.
+
+If you're using **Minikube**:
+
+```bash
+minikube ssh
+```
+
+Check the directory:
+
+```bash
+cd /mnt/disk/local1
+ls -l
+cat test.txt
+```
+
+Output:
+
+```text
+Hello Kubernetes
+```
+
+This confirms the Pod is writing directly to the local disk.
+
+---
+
+# How It Works
+
+```text
+                Pod
+        +------------------+
+        |      nginx       |
+        |                  |
+        | /usr/share/      |
+        | nginx/html       |
+        +--------+---------+
+                 |
+           volumeMount
+                 |
+        +--------v---------+
+        | PersistentVolume |
+        |      Claim       |
+        | local-volume-claim |
+        +--------+---------+
+                 |
+             Bound to
+                 |
+        +--------v---------+
+        | PersistentVolume |
+        |  local-volume    |
+        +--------+---------+
+                 |
+          local.path
+                 |
+        /mnt/disk/local1
+        (Node filesystem)
+```
+
+---
+
+## Interview Questions
+
+**Q1. What is `volumeMounts`?**
+
+* It specifies **where inside the container** the storage is mounted.
+
+**Q2. What is `volumes`?**
+
+* It defines **which storage source** the Pod uses (in this case, a PVC).
+
+**Q3. What is `claimName`?**
+
+* It is the name of the **PersistentVolumeClaim** that the Pod should use.
+
+**Q4. Does the Pod use the PV directly?**
+
+* No. The Pod always uses a **PersistentVolumeClaim (PVC)**. Kubernetes binds the PVC to the appropriate PV.
+
+**Q5. What happens if the Pod is deleted?**
+
+* The data remains on the PersistentVolume because the storage is independent of the Pod. If the PV's reclaim policy is `Retain`, the data is preserved even after the PVC is deleted until you clean it up manually.
+
+
+# Hands-on: Mounting a PersistentVolume to a Pod (Local PersistentVolume)
+
+In this hands-on, you'll learn:
+
+* Create a Local PersistentVolume (PV)
+* Create a PersistentVolumeClaim (PVC)
+* Mount the PVC inside a Pod
+* Verify data persistence
+* Verify the same PVC can be accessed by another Pod on the same node
+* Understand **why** each step is required
+
+---
+
+# Architecture
+
+```text
+                  Kubernetes Cluster
+
+        +------------------------------------+
+
+             PersistentVolume (PV)
+        +------------------------------------+
+        | local-volume                       |
+        | Storage: 1Gi                       |
+        | Path: /mnt/disks/local1            |
+        +----------------+-------------------+
+                         |
+                    Bound To
+                         |
+        +----------------v-------------------+
+        | PersistentVolumeClaim (PVC)        |
+        | local-volume-claim                 |
+        +----------------+-------------------+
+                         |
+             Mounted inside Pods
+                /mnt/local
+                /mnt/local2
+         +---------------+---------------+
+         |                               |
++--------v--------+             +--------v--------+
+| local-vol-pod   |             | local-vol-pod2  |
++-----------------+             +-----------------+
+
+Both Pods read/write the same storage.
+```
+
+---
+
+# Complete YAML
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: local-volume                 # Name of the PersistentVolume
+
+spec:
+  capacity:
+    storage: 1Gi                     # Total storage available
+
+  volumeMode: Filesystem             # Expose storage as a filesystem
+
+  accessModes:
+    - ReadWriteOnce                  # Read/Write by one node
+
+  persistentVolumeReclaimPolicy: Retain
+                                    # Keep data even after PVC deletion
+
+  storageClassName: local-storage    # StorageClass
+
+  local:
+    path: /mnt/disks/local1          # Actual directory on the node
+
+  nodeAffinity:                      # Required for Local PV
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+
+metadata:
+  name: local-volume-claim
+
+spec:
+  resources:
+    requests:
+      storage: 1Gi                  # Must be <= PV size
+
+  volumeMode: Filesystem
+
+  accessModes:
+    - ReadWriteOnce
+
+  storageClassName: local-storage
+---
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: local-vol-pod
+
+spec:
+  containers:
+    - name: busybox
+      image: busybox:1.36.1
+
+      command:
+        - sh
+        - -c
+        - sleep 3600
+
+      volumeMounts:
+        - name: local-storage
+          mountPath: /mnt/local      # Mounted inside container
+
+  volumes:
+    - name: local-storage
+      persistentVolumeClaim:
+        claimName: local-volume-claim
+---
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: local-vol-pod2
+
+spec:
+  containers:
+    - name: busybox
+      image: busybox:1.36.1
+
+      command:
+        - sh
+        - -c
+        - sleep 3600
+
+      volumeMounts:
+        - name: local-storage
+          mountPath: /mnt/local2
+
+  volumes:
+    - name: local-storage
+      persistentVolumeClaim:
+        claimName: local-volume-claim
+```
+
+---
+
+# Step 1 Apply everything
+
+```bash
+kubectl apply -f local-vol-example.yaml
+```
+
+Check resources.
+
+```bash
+kubectl get pv
+kubectl get pvc
+kubectl get pods
+```
+
+---
+
+# Problem 1
+
+Pod stays in
+
+```
+ContainerCreating
+```
+
+Why?
+
+Describe the pod.
+
+```bash
+kubectl describe pod local-vol-pod
+```
+
+Near the bottom you'll see
+
+```
+Warning FailedMount
+MountVolume.NewMounter initialization failed
+```
+
+or
+
+```
+path "/mnt/disks/local1" does not exist
+```
+
+---
+
+# Why did this happen?
+
+Your PV says
+
+```yaml
+local:
+  path: /mnt/disks/local1
+```
+
+Kubernetes expects this directory to already exist.
+
+Unlike hostPath, Kubernetes **does not create it automatically**.
+
+Since the folder doesn't exist,
+
+the volume cannot be mounted.
+
+---
+
+# Step 2 Delete the pod
+
+```bash
+kubectl delete pod local-vol-pod
+```
+
+---
+
+# Step 3 Login into Minikube
+
+Find node
+
+```bash
+kubectl get nodes
+```
+
+SSH
+
+```bash
+minikube ssh
+```
+
+Create the directory
+
+```bash
+sudo mkdir -p /mnt/disks/local1
+```
+
+Give permissions
+
+```bash
+sudo chmod 777 /mnt/disks/local1
+```
+
+Verify
+
+```bash
+cd /mnt/disks/local1
+
+ls
+```
+
+Exit
+
+```bash
+exit
+```
+
+---
+
+# Step 4 Apply Again
+
+```bash
+kubectl apply -f local-vol-example.yaml
+```
+
+Now check
+
+```bash
+kubectl get pods
+```
+
+Output
+
+```
+NAME
+local-vol-pod
+
+STATUS
+Running
+```
+
+Why?
+
+Now Kubernetes successfully mounted
+
+```
+/mnt/disks/local1
+```
+
+into
+
+```
+/mnt/local
+```
+
+inside the container.
+
+---
+
+# Step 5 Enter the Pod
+
+```bash
+kubectl exec -it local-vol-pod -- sh
+```
+
+Go to mount point
+
+```bash
+cd /mnt/local
+```
+
+Create a file
+
+```bash
+echo "Hello" > hello.txt
+```
+
+Verify
+
+```bash
+cat hello.txt
+```
+
+Output
+
+```
+Hello
+```
+
+Exit
+
+```bash
+exit
+```
+
+---
+
+# Step 6 Verify on the Node
+
+SSH
+
+```bash
+minikube ssh
+```
+
+Go to directory
+
+```bash
+cd /mnt/disks/local1
+```
+
+List files
+
+```bash
+ls
+```
+
+Output
+
+```
+hello.txt
+```
+
+Read it
+
+```bash
+cat hello.txt
+```
+
+Output
+
+```
+Hello
+```
+
+---
+
+# Why?
+
+Inside the Pod
+
+```
+/mnt/local
+```
+
+is simply another view of
+
+```
+/mnt/disks/local1
+```
+
+on the node.
+
+They point to the same storage.
+
+```
+Pod
+
+/mnt/local
+     |
+     |
+     V
+
+Node
+
+/mnt/disks/local1
+```
+
+---
+
+# Step 7 Delete the Pod
+
+```bash
+kubectl delete pod local-vol-pod --force
+```
+
+Check
+
+```bash
+kubectl get pods
+```
+
+No pod exists.
+
+---
+
+# Step 8 Create Pod Again
+
+```bash
+kubectl apply -f local-vol-example.yaml
+```
+
+Wait
+
+```bash
+kubectl get pods
+```
+
+Running
+
+---
+
+# Step 9 Verify Data
+
+Enter pod
+
+```bash
+kubectl exec -it local-vol-pod -- sh
+```
+
+Read
+
+```bash
+cat /mnt/local/hello.txt
+```
+
+Output
+
+```
+Hello
+```
+
+---
+
+# Why didn't the file disappear?
+
+Deleting a Pod deletes
+
+* Container
+* Process
+* Memory
+
+It **does not delete the PersistentVolume**.
+
+The data lives on
+
+```
+/mnt/disks/local1
+```
+
+outside the Pod.
+
+This is exactly why PersistentVolumes exist.
+
+---
+
+# Step 10 Create Pod2
+
+Apply again with Pod2.
+
+```bash
+kubectl apply -f local-vol-example.yaml
+```
+
+Check
+
+```bash
+kubectl get pods
+```
+
+```
+local-vol-pod
+local-vol-pod2
+```
+
+---
+
+# Enter Pod2
+
+```bash
+kubectl exec -it local-vol-pod2 -- sh
+```
+
+Go to
+
+```bash
+cd /mnt/local2
+```
+
+List
+
+```bash
+ls
+```
+
+Output
+
+```
+hello.txt
+```
+
+Read
+
+```bash
+cat hello.txt
+```
+
+Output
+
+```
+Hello
+```
+
+---
+
+# Why does Pod2 see the same file?
+
+Both Pods mount the **same PVC**, which is already bound to the same PV. Since both mount the same underlying directory (`/mnt/disks/local1`) on the same node, they see the same files.
+
+```
+                  Node
+
+          /mnt/disks/local1
+          ------------------
+          hello.txt
+          notes.txt
+          logs/
+
+                ▲
+                │
+      +---------+---------+
+      |                   |
+      |                   |
++-----+------+     +------+------+
+| Pod 1       |     | Pod 2       |
+| /mnt/local  |     | /mnt/local2 |
++-------------+     +-------------+
+```
+
+---
+
+# Important Note About `ReadWriteOnce (RWO)`
+
+`ReadWriteOnce` means the volume can be mounted as read-write by **one node** at a time.
+
+* ✅ Multiple Pods **on the same node** can use the same RWO volume if Kubernetes allows the workload placement.
+* ❌ Pods on **different nodes** cannot simultaneously mount the same RWO volume.
+
+---
+
+# Interview Questions
+
+### Why do we use a PVC instead of directly mounting a PV?
+
+Pods should not depend directly on specific storage. A PVC acts as an abstraction layer, allowing Kubernetes to bind an appropriate PV and making applications portable.
+
+---
+
+### Why did the Pod fail with `FailedMount`?
+
+Because the local path `/mnt/disks/local1` did not exist on the node. Local PersistentVolumes require the directory to be created manually.
+
+---
+
+### Why does the file still exist after deleting the Pod?
+
+The data is stored on the PersistentVolume, which exists independently of the Pod. Deleting the Pod only removes the container, not the underlying storage.
+
+---
+
+### Why can Pod2 read the same file?
+
+Because both Pods are mounting the same PVC, which is bound to the same PV backed by the same local directory.
+
+---
+
+### What is the difference between `mountPath` and `local.path`?
+
+| Field        | Location             | Purpose                                                   |
+| ------------ | -------------------- | --------------------------------------------------------- |
+| `local.path` | Node                 | The actual directory where data is stored.                |
+| `mountPath`  | Inside the container | The location where the application accesses that storage. |
+
+For example:
+
+```
+Node:
+/mnt/disks/local1
+
+Container:
+/mnt/local
+```
+
+Both paths reference the same underlying data.
+
+
+
+
