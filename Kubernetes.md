@@ -9646,3 +9646,839 @@ It is a template inside a StatefulSet that automatically creates a dedicated Per
 ### 5. Why is a Headless Service commonly used with StatefulSets?
 
 A Headless Service provides stable DNS names for each Pod, enabling reliable communication between replicas in distributed systems such as Kafka, MongoDB, and ZooKeeper.
+
+
+
+Absolutely. These notes explain **every line**, **why it is needed**, **what problem it solves**, and **why we create it**. This is the level of understanding expected in Kubernetes/DevOps interviews.
+
+---
+
+# Hands-on: Creating a StatefulSet with Persistent Volumes
+
+## Objective
+
+In this hands-on, we will create a StatefulSet that has **2 Pods**, and each Pod will have **its own PersistentVolumeClaim (PVC)**.
+
+Before creating the StatefulSet, we manually create **3 PersistentVolumes (PVs)** on the Minikube node.
+
+The overall flow is:
+
+```text
+Create Directories
+        │
+        ▼
+Create PersistentVolumes
+        │
+        ▼
+Create StatefulSet
+        │
+        ▼
+StatefulSet automatically creates PVCs
+        │
+        ▼
+PVCs bind to available PVs
+        │
+        ▼
+Pods mount their own storage
+```
+
+---
+
+# Step 1: Create Directories on the Node
+
+SSH into Minikube.
+
+```bash
+minikube ssh
+```
+
+Create three directories.
+
+```bash
+sudo mkdir -p /mnt/disks/ss-0
+sudo mkdir -p /mnt/disks/ss-1
+sudo mkdir -p /mnt/disks/ss-2
+```
+
+Give permission.
+
+```bash
+sudo chmod 777 /mnt/disks/ss-0
+sudo chmod 777 /mnt/disks/ss-1
+sudo chmod 777 /mnt/disks/ss-2
+```
+
+---
+
+## Why are we creating these directories?
+
+Because we are using **Local PersistentVolumes**.
+
+A Local PV stores data inside a directory on the Kubernetes node.
+
+```text
+Minikube Node
+
+/mnt/disks/ss-0
+
+/mnt/disks/ss-1
+
+/mnt/disks/ss-2
+```
+
+These directories become the actual storage locations.
+
+If they don't exist,
+
+the Pod will fail with
+
+```text
+FailedMount
+```
+
+---
+
+# Why create three directories?
+
+Suppose our StatefulSet has
+
+```yaml
+replicas: 2
+```
+
+Eventually we may scale it to
+
+```yaml
+replicas: 3
+```
+
+Each Pod should have its own storage.
+
+Instead of
+
+```text
+Pod-0
+
+↓
+
+Same Folder
+```
+
+we use
+
+```text
+Pod-0
+
+↓
+
+ss-0
+```
+
+```text
+Pod-1
+
+↓
+
+ss-1
+```
+
+```text
+Pod-2
+
+↓
+
+ss-2
+```
+
+This prevents data corruption.
+
+---
+
+# Project Structure
+
+Create a working directory.
+
+```bash
+mkdir stateful-sets
+
+cd stateful-sets
+```
+
+Open VS Code.
+
+```bash
+code .
+```
+
+---
+
+# Step 2: Create PersistentVolumes
+
+Create
+
+```bash
+touch pvs.yaml
+```
+
+---
+
+# Complete YAML with Comments
+
+```yaml
+apiVersion: v1                 # Kubernetes API version
+kind: PersistentVolume         # This resource creates a PersistentVolume
+
+metadata:
+  name: ss-0                   # Name of the PV
+
+spec:
+
+  capacity:
+    storage: 128Mi             # Total capacity of this PV
+
+  accessModes:
+    - ReadWriteOnce            # One node can mount this volume as read/write
+
+  storageClassName: local-storage
+                               # PVC must request the same StorageClass
+
+  local:
+    path: /mnt/disks/ss-0      # Actual directory on the node
+
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+```
+
+Repeat the same for
+
+```text
+ss-1
+```
+
+and
+
+```text
+ss-2
+```
+
+---
+
+# Why do we create three PersistentVolumes?
+
+Because each StatefulSet Pod requires its own storage.
+
+Imagine
+
+```text
+Replicas = 3
+```
+
+StatefulSet creates
+
+```text
+Pod-0
+
+Pod-1
+
+Pod-2
+```
+
+Each Pod should get
+
+```text
+PV-0
+
+PV-1
+
+PV-2
+```
+
+instead of
+
+```text
+PV
+```
+
+shared by everyone.
+
+---
+
+# Architecture
+
+```text
+PV
+
+ss-0
+
+↓
+
+Directory
+
+/mnt/disks/ss-0
+```
+
+```text
+PV
+
+ss-1
+
+↓
+
+Directory
+
+/mnt/disks/ss-1
+```
+
+```text
+PV
+
+ss-2
+
+↓
+
+Directory
+
+/mnt/disks/ss-2
+```
+
+---
+
+# Apply PersistentVolumes
+
+```bash
+kubectl apply -f pvs.yaml
+```
+
+Verify
+
+```bash
+kubectl get pv
+```
+
+Output
+
+```text
+NAME
+
+ss-0
+
+ss-1
+
+ss-2
+```
+
+Status
+
+```text
+Available
+```
+
+---
+
+# Why is the status "Available"?
+
+Because
+
+No PVC has claimed them yet.
+
+Available means
+
+```text
+Waiting for a PVC
+```
+
+---
+
+# StatefulSet YAML
+
+Create
+
+```bash
+touch stateful-set.yaml
+```
+
+---
+
+# Complete YAML with Explanation
+
+```yaml
+apiVersion: apps/v1                 # API version for StatefulSet
+kind: StatefulSet                   # Creates a StatefulSet
+
+metadata:
+  name: demo-ss                     # StatefulSet name
+
+spec:
+
+  serviceName: busybox              # Headless Service name
+                                    # Required by StatefulSet
+                                    # Provides stable DNS names
+
+  replicas: 2                       # Create two Pods
+
+  selector:
+    matchLabels:
+      app: busybox                  # Finds Pods having this label
+
+  template:
+
+    metadata:
+      labels:
+        app: busybox                # Label assigned to every Pod
+
+    spec:
+
+      containers:
+
+        - name: busybox
+
+          image: busybox:1.36.1
+
+          command:
+            - sh
+            - -c
+            - sleep 3600            # Keep container running
+
+          resources:
+
+            limits:
+              memory: 128Mi
+              cpu: 500m
+
+          volumeMounts:
+
+            - name: local-volume
+
+              mountPath: /mnt/local
+              # Storage appears here inside the container
+
+  volumeClaimTemplates:
+
+    - metadata:
+
+        name: local-volume
+
+      spec:
+
+        accessModes:
+          - ReadWriteOnce
+
+        storageClassName: standard
+
+        resources:
+
+          requests:
+            storage: 128Mi
+```
+
+---
+
+# Why don't we create PVCs manually?
+
+Normally we create
+
+```text
+PVC-1
+
+PVC-2
+
+PVC-3
+```
+
+But StatefulSet automatically creates them.
+
+That is the purpose of
+
+```yaml
+volumeClaimTemplates
+```
+
+---
+
+# What does volumeClaimTemplates do?
+
+Think of it like a blueprint.
+
+You define
+
+```yaml
+storage: 128Mi
+```
+
+once.
+
+If
+
+```yaml
+replicas: 2
+```
+
+Kubernetes automatically creates
+
+```text
+local-volume-demo-ss-0
+
+local-volume-demo-ss-1
+```
+
+Each Pod gets its own PVC.
+
+---
+
+# Flow
+
+```text
+StatefulSet
+
+↓
+
+volumeClaimTemplates
+
+↓
+
+PVC-0
+
+PVC-1
+
+↓
+
+Bind to PV
+
+↓
+
+Pod starts
+```
+
+---
+
+# Why use a template?
+
+Without StatefulSet
+
+You would manually write
+
+```yaml
+PVC1
+
+PVC2
+
+PVC3
+```
+
+Huge duplication.
+
+Instead
+
+```yaml
+volumeClaimTemplates
+```
+
+creates them automatically.
+
+---
+
+# One Important Interview Question
+
+## Why did we manually create 3 PVs if replicas = 2?
+
+Excellent question.
+
+We created
+
+```text
+PV
+
+ss-0
+
+PV
+
+ss-1
+
+PV
+
+ss-2
+```
+
+but
+
+```yaml
+replicas: 2
+```
+
+Only
+
+```text
+Pod-0
+
+Pod-1
+```
+
+exist.
+
+Only
+
+```text
+PVC-0
+
+PVC-1
+```
+
+are created.
+
+Therefore
+
+```text
+PV-2
+```
+
+remains
+
+```text
+Available
+```
+
+because nobody requested it.
+
+---
+
+# Will Pod-0 always get PV ss-0?
+
+**No.**
+
+This is a very common misconception.
+
+StatefulSet **does not** say:
+
+```text
+Pod-0
+
+↓
+
+PV ss-0
+```
+
+Instead
+
+PVC requests
+
+```text
+128Mi
+
+ReadWriteOnce
+
+StorageClass=local-storage
+```
+
+Kubernetes finds
+
+**any available PV**
+
+matching those requirements.
+
+If all three PVs are identical,
+
+the binding order is **not guaranteed**.
+
+---
+
+# Why?
+
+PersistentVolume binding depends on
+
+* StorageClass
+* Capacity
+* AccessMode
+* Availability
+
+Not on the PV name.
+
+---
+
+# Complete Architecture
+
+```text
+            StatefulSet
+
+               demo-ss
+
+                  │
+
+     ----------------------------
+
+      │                      │
+
+ demo-ss-0             demo-ss-1
+
+      │                      │
+
+PVC(local-volume)     PVC(local-volume)
+
+      │                      │
+
+Matches Available PV
+
+      │                      │
+
+ss-0 or ss-1          ss-0 or ss-1
+
+      │                      │
+
+/mnt/disks/ss-x
+```
+
+---
+
+# Interview Questions
+
+## Q1. Why do we create directories before creating Local PersistentVolumes?
+
+Because a Local PV points to an existing directory on the node. Kubernetes does not create the directory automatically.
+
+---
+
+## Q2. Why are three PersistentVolumes created?
+
+To provide storage for up to three StatefulSet replicas. Each replica should have its own dedicated storage.
+
+---
+
+## Q3. Why don't we manually create PVCs?
+
+StatefulSets use `volumeClaimTemplates` to automatically generate one PVC per Pod replica.
+
+---
+
+## Q4. Why is `serviceName` mandatory?
+
+A StatefulSet requires a Service (typically a **Headless Service**) to provide stable DNS names such as:
+
+```text
+demo-ss-0.busybox.default.svc.cluster.local
+demo-ss-1.busybox.default.svc.cluster.local
+```
+
+This allows applications like databases to reliably communicate with each replica.
+
+---
+
+## Q5. Why is one PV still in the `Available` state?
+
+Because you created three PVs but only two replicas. The StatefulSet creates only two PVCs, so one PV remains unused until another matching PVC is created.
+
+
+
+pvs.yaml 
+
+```
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ss-0
+spec:
+  capacity:
+    storage: 128Mi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-storage
+  local:
+    path: /mnt/disks/ss-0
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: ['minikube']
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ss-1
+spec:
+  capacity:
+    storage: 128Mi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-storage
+  local:
+    path: /mnt/disks/ss-1
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: ['minikube']
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ss-2
+spec:
+  capacity:
+    storage: 128Mi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-storage
+  local:
+    path: /mnt/disks/ss-2
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: ['minikube']
+```
+
+stateful-set.yaml
+
+```
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: demo-ss
+spec:
+  serviceName: busybox
+  replicas: 2
+  selector:
+    matchLabels:
+      app: busybox
+  template:
+    metadata:
+      labels:
+        app: busybox
+    spec:
+      containers:
+        - name: busybox
+          image: busybox:1.36.1
+          command:
+            - 'sh'
+            - '-c'
+            - 'sleep 3600'
+          resources:
+            limits:
+              memory: '128Mi'
+              cpu: '500m'
+          volumeMounts:
+            - name: local-volume
+              mountPath: /mnt/local
+  volumeClaimTemplates:
+    - metadata:
+        name: local-volume
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 128Mi
+
+```
