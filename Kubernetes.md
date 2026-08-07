@@ -10482,3 +10482,941 @@ spec:
             storage: 128Mi
 
 ```
+
+
+
+Below are **detailed interview-quality notes** based on the StatefulSet hands-on you shared. The notes follow the same concepts demonstrated in your lecture. 
+
+---
+
+# Kubernetes StatefulSet - Hands-on Notes
+
+# Objective
+
+In this hands-on we will learn:
+
+* How to create a StatefulSet
+* How StatefulSets automatically create PersistentVolumeClaims (PVCs)
+* Why StatefulSets provide stable Pod identities
+* Why every Pod gets its own storage
+* How Pods retain data after restart
+* Difference between StatefulSet and Deployment
+
+---
+
+# Architecture
+
+```text
+             StatefulSet
+                demo-ss
+                   │
+       -------------------------
+       │                       │
+   demo-ss-0              demo-ss-1
+       │                       │
+       │                       │
+PVC(local-volume)      PVC(local-volume)
+       │                       │
+       │                       │
+      PV0                     PV1
+       │                       │
+       │                       │
+/mnt/disks/ss-0        /mnt/disks/ss-1
+```
+
+Notice
+
+Every Pod has
+
+* its own PVC
+* its own PV
+* its own Storage
+
+No storage is shared.
+
+---
+
+# Create StatefulSet
+
+```bash
+touch stateful-set.yaml
+```
+
+---
+
+# StatefulSet YAML with Comments
+
+```yaml
+apiVersion: apps/v1               # API version used for StatefulSet
+
+kind: StatefulSet                 # Creates a StatefulSet
+
+metadata:
+  name: demo-ss                   # Name of the StatefulSet
+
+spec:
+
+  serviceName: busybox            # Headless Service name
+                                  # StatefulSet requires a service
+                                  # Used for stable DNS names
+
+  replicas: 2                     # Create two Pods
+
+  selector:
+    matchLabels:
+      app: busybox                # StatefulSet manages Pods having this label
+
+  template:
+
+    metadata:
+
+      labels:
+        app: busybox              # Label assigned to every Pod
+
+    spec:
+
+      containers:
+
+        - name: busybox           # Container name
+
+          image: busybox:1.36.1   # BusyBox image
+
+          command:
+            - sh
+            - -c
+            - sleep 3600          # Keeps container alive
+
+          resources:
+
+            limits:
+              memory: 128Mi
+              cpu: 500m
+
+          volumeMounts:
+
+            - name: local-volume
+
+              mountPath: /mnt/local
+              # Storage will be mounted here
+
+  volumeClaimTemplates:
+
+    - metadata:
+
+        name: local-volume
+
+      spec:
+
+        accessModes:
+          - ReadWriteOnce
+
+        storageClassName: standard
+
+        resources:
+
+          requests:
+            storage: 128Mi
+```
+
+---
+
+# Why is serviceName required?
+
+Unlike Deployments,
+
+StatefulSets provide
+
+Stable DNS names.
+
+For that Kubernetes needs a Service.
+
+Usually
+
+Headless Service
+
+Example
+
+```text
+demo-ss-0.busybox.default.svc.cluster.local
+
+demo-ss-1.busybox.default.svc.cluster.local
+```
+
+Applications
+
+like
+
+* MongoDB
+* Kafka
+* Cassandra
+
+communicate using these names.
+
+---
+
+# Why replicas = 2?
+
+```yaml
+replicas: 2
+```
+
+Kubernetes creates
+
+```text
+demo-ss-0
+
+demo-ss-1
+```
+
+Notice
+
+No random names.
+
+Unlike Deployment
+
+```text
+nginx-7587d
+
+nginx-9d78f
+```
+
+StatefulSet Pods always have
+
+```text
+<StatefulSet Name>-<Ordinal Number>
+
+demo-ss-0
+
+demo-ss-1
+```
+
+---
+
+# Why do we use Selector?
+
+```yaml
+selector:
+
+ matchLabels:
+     app: busybox
+```
+
+The StatefulSet needs to know
+
+which Pods belong to it.
+
+Only Pods having
+
+```yaml
+app: busybox
+```
+
+are managed.
+
+---
+
+# Pod Template
+
+Very similar to Deployment.
+
+Whatever is inside
+
+```yaml
+template:
+```
+
+becomes the Pod.
+
+Includes
+
+* image
+* command
+* resources
+* labels
+
+---
+
+# Why volumeMounts?
+
+```yaml
+volumeMounts:
+
+- name: local-volume
+
+  mountPath: /mnt/local
+```
+
+This tells Kubernetes
+
+Mount the Persistent Storage
+
+inside the container
+
+under
+
+```text
+/mnt/local
+```
+
+The application reads and writes files here.
+
+---
+
+# Where is the volumes section?
+
+Notice
+
+There is NO
+
+```yaml
+volumes:
+```
+
+section.
+
+Normally
+
+Pods require
+
+```yaml
+volumes:
+
+persistentVolumeClaim:
+```
+
+But StatefulSet does it automatically.
+
+---
+
+# Why?
+
+Because StatefulSet uses
+
+```yaml
+volumeClaimTemplates
+```
+
+instead.
+
+Kubernetes automatically creates
+
+* PVC
+* Volume definition
+
+behind the scenes.
+
+---
+
+# What is volumeClaimTemplates?
+
+This is the most important concept.
+
+Instead of manually creating
+
+```text
+PVC1
+
+PVC2
+
+PVC3
+```
+
+StatefulSet automatically creates them.
+
+You only define
+
+one template.
+
+Example
+
+```yaml
+volumeClaimTemplates
+```
+
+↓
+
+If
+
+```yaml
+replicas: 2
+```
+
+Kubernetes creates
+
+```text
+local-volume-demo-ss-0
+
+local-volume-demo-ss-1
+```
+
+Each Pod gets
+
+its own PVC.
+
+---
+
+# Apply StatefulSet
+
+```bash
+kubectl apply -f stateful-set.yaml
+```
+
+Output
+
+```text
+statefulset.apps/demo-ss created
+```
+
+---
+
+# Verify Pods
+
+```bash
+kubectl get pods
+```
+
+Output
+
+```text
+demo-ss-0
+
+demo-ss-1
+```
+
+Notice
+
+Pods have
+
+Stable Names.
+
+---
+
+# Verify StatefulSet
+
+```bash
+kubectl get statefulset
+```
+
+or
+
+```bash
+kubectl get sts
+```
+
+Both commands work.
+
+---
+
+# Check PersistentVolumes
+
+```bash
+kubectl get pv
+```
+
+Output
+
+```text
+ss-0     Bound
+
+ss-1     Bound
+
+ss-2     Available
+```
+
+---
+
+# Why only two PVs are Bound?
+
+Because
+
+```yaml
+replicas: 2
+```
+
+Only two Pods exist.
+
+Each Pod creates one PVC.
+
+Therefore
+
+only
+
+two PVs
+
+are needed.
+
+Third PV remains
+
+```text
+Available
+```
+
+---
+
+# Check PVCs
+
+```bash
+kubectl get pvc
+```
+
+Output
+
+```text
+local-volume-demo-ss-0
+
+local-volume-demo-ss-1
+```
+
+Notice
+
+StatefulSet automatically names them
+
+```text
+<PVC Name>
+
++
+
+<StatefulSet Name>
+
++
+
+<Ordinal Number>
+```
+
+Example
+
+```text
+local-volume-demo-ss-0
+```
+
+---
+
+# Delete a Pod
+
+```bash
+kubectl delete pod demo-ss-0
+```
+
+or
+
+```bash
+kubectl delete pod --force demo-ss-0
+```
+
+---
+
+# What happens?
+
+Deployment
+
+```text
+Old Pod
+
+↓
+
+New Pod
+
+Different Name
+```
+
+StatefulSet
+
+```text
+demo-ss-0
+
+↓
+
+demo-ss-0
+```
+
+Exactly
+
+same name.
+
+---
+
+# Why?
+
+StatefulSet guarantees
+
+Stable Identity.
+
+---
+
+# Verify
+
+```bash
+kubectl get pods
+```
+
+Output
+
+```text
+demo-ss-0
+
+demo-ss-1
+```
+
+The deleted Pod
+
+comes back
+
+with
+
+same name.
+
+---
+
+# Create a File
+
+Enter Pod
+
+```bash
+kubectl exec -it demo-ss-0 -- sh
+```
+
+Create file
+
+```bash
+echo "Hello from demo-ss-0" > /mnt/local/hello.txt
+```
+
+Exit
+
+---
+
+# Verify
+
+```bash
+kubectl exec -it demo-ss-0 -- sh
+```
+
+Read
+
+```bash
+cat /mnt/local/hello.txt
+```
+
+Output
+
+```text
+Hello from demo-ss-0
+```
+
+---
+
+# Check Pod-1
+
+```bash
+kubectl exec -it demo-ss-1 -- sh
+```
+
+Run
+
+```bash
+cat /mnt/local/hello.txt
+```
+
+Output
+
+```text
+No such file
+```
+
+---
+
+# Why?
+
+Each Pod owns
+
+its own storage.
+
+Pod-0
+
+↓
+
+PVC-0
+
+↓
+
+PV-0
+
+Pod-1
+
+↓
+
+PVC-1
+
+↓
+
+PV-1
+
+They never share storage.
+
+---
+
+# Delete Pod Again
+
+```bash
+kubectl delete pod --force demo-ss-0
+```
+
+Wait
+
+```bash
+kubectl get pods
+```
+
+Pod recreated.
+
+---
+
+# Verify Data
+
+```bash
+kubectl exec -it demo-ss-0 -- sh
+```
+
+Run
+
+```bash
+cat /mnt/local/hello.txt
+```
+
+Output
+
+```text
+Hello from demo-ss-0
+```
+
+---
+
+# Why is the file still there?
+
+When Pod was deleted
+
+only
+
+Container
+
+was deleted.
+
+PVC
+
+still exists.
+
+PV
+
+still exists.
+
+StatefulSet automatically reattached
+
+same PVC
+
+to
+
+same Pod.
+
+---
+
+# How StatefulSet Restores Storage
+
+```text
+Pod Deleted
+
+↓
+
+PVC remains
+
+↓
+
+PV remains
+
+↓
+
+StatefulSet recreates Pod
+
+↓
+
+Reconnects same PVC
+
+↓
+
+Reconnects same PV
+
+↓
+
+Data available
+```
+
+---
+
+# Important Notes
+
+### StatefulSet automatically creates PVCs.
+
+### StatefulSet does NOT automatically create PVs unless dynamic provisioning is configured.
+
+### Every Pod gets its own PVC.
+
+### Every PVC binds to one PV.
+
+### Pod deletion does NOT delete PVC.
+
+### PVC deletion does NOT happen automatically.
+
+### Stable Pod names are guaranteed.
+
+### Ordered Pod creation is guaranteed.
+
+### Ordered Pod deletion is guaranteed.
+
+---
+
+# StatefulSet Lifecycle
+
+```text
+Create StatefulSet
+
+        │
+
+        ▼
+
+Create Pod-0
+
+        │
+
+Create PVC-0
+
+        │
+
+Bind PV
+
+        │
+
+Pod Running
+
+        │
+
+        ▼
+
+Create Pod-1
+
+        │
+
+Create PVC-1
+
+        │
+
+Bind PV
+
+        │
+
+Running
+
+        │
+
+Delete Pod-0
+
+        │
+
+PVC remains
+
+        │
+
+PV remains
+
+        │
+
+Pod recreated
+
+        │
+
+Reconnect PVC
+
+        │
+
+Reconnect PV
+
+        │
+
+Data restored
+```
+
+---
+
+# Real-World Use Cases
+
+### 1. MySQL Cluster
+
+Each MySQL instance stores its own database files.
+
+```text
+mysql-0 → PVC-0 → EBS Volume-0
+
+mysql-1 → PVC-1 → EBS Volume-1
+```
+
+If `mysql-0` restarts, it reconnects to the same EBS volume and retains all database data.
+
+---
+
+### 2. Apache Kafka
+
+Each Kafka broker stores a different set of partitions.
+
+```text
+kafka-0 → PVC-0
+
+kafka-1 → PVC-1
+
+kafka-2 → PVC-2
+```
+
+Each broker must keep its own storage to preserve messages and offsets.
+
+---
+
+### 3. MongoDB Replica Set
+
+```text
+mongodb-0 → Primary
+
+mongodb-1 → Secondary
+
+mongodb-2 → Secondary
+```
+
+Each replica has its own data directory and journal files. Restarting a Pod should reconnect it to its original storage, which is exactly what StatefulSets provide.
+
+---
+
+# Interview Questions
+
+### Q1. Why don't we specify a `volumes` section in the Pod template?
+
+Because StatefulSets automatically generate the `volumes` entries from the `volumeClaimTemplates`.
+
+---
+
+### Q2. Why does each Pod get a different PVC?
+
+To isolate each Pod's data. Sharing a single volume between database replicas can lead to corruption and inconsistent state.
+
+---
+
+### Q3. Why does Pod-1 not see the file created by Pod-0?
+
+Each Pod is attached to a different PVC and a different PV. They do not share storage by default.
+
+---
+
+### Q4. What happens if `demo-ss-0` is deleted?
+
+The StatefulSet recreates `demo-ss-0` with the same name and automatically reattaches the original PVC, so the data remains available.
+
+---
+
+### Q5. Why is one PersistentVolume still in the `Available` state?
+
+Because only two replicas were created. Two PVCs were generated and bound, leaving the third PV unused and therefore still `Available`.
