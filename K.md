@@ -1,33 +1,96 @@
-Statefulsets with Dynamically Provisioned Volumes
+Headless Services
 
+mkdir HEADLESS-SERVICE
+
+touch svc.yaml 
 
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: Service
 metadata:
-  name: dynamic-pv-example
+  name: color-svc
 spec:
-  resources:
-    requests:
-      storage: 1Gi
-  volumeMode: Filesystem
-  storageClassName: standard
-  accessModes:
-    - ReadWriteOnce
+  clusterIP: None
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: color-api
 
 
+kubectl apply -f svc.yaml 
 
-Apply the stateful-set.yaml file 
+kubectl get svc 
 
-kubectl apply -f stateful-set.yaml 
+touch color-ss.yaml 
 
-kubectl get pod 
-kubectl get pvc
-kubectl describe pod local-volume-ss-0
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: color-ss
+spec:
+  selector:
+    matchLabels:
+      app: color-api
+  serviceName: color-svc
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: color-api
+    spec:
+      containers:
+        - name: color-api
+          image: lmacademy/color-api:1.2.1
+          ports:
+            - containerPort: 80
+              name: web
+          volumeMounts:
+            - name: dummy-data
+              mountPath: /tmp/data
+  volumeClaimTemplates:
+    - metadata:
+        name: dummy-data
+      spec:
+        accessModes: ['ReadWriteOnce']
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 1Gi
+
+kubectl apply -f color-ss.yaml 
+
+kubectl get pod --watch 
+
+kubctl describe svc color-svc
 
 
-ssh into minikube 
+touch debug.yaml 
 
-cd /tmp/hostpath-provisioner/default/
-You will find the two files here. 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl
+  labels:
+    name: curl
+spec:
+  containers:
+    - name: curl
+      image: lmacademy/alpine-curl:1.0.0
+      resources:
+        limits:
+          memory: '128Mi'
+          cpu: '500m'
 
-kubectl delete pvc --all
+
+kubectl apply -f debug.yaml
+kubectl exec -it curl -- sh 
+
+curl color-ss-0.color-svc 
+
+curl color-ss-0.color-svc/api 
+
+curl color-ss-2.color-svc/api 
+
+
+curl color-ss-2.color-svc.default.svc.cluster.local  this is FQDN
+what is this 

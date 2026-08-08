@@ -12812,3 +12812,1552 @@ Actual Storage
 ```
 
 **This is the key flow to remember for your interview.**
+
+
+# Kubernetes Headless Service — Detailed Notes + Hands-on
+
+These notes cover the **Headless Service hands-on** you shared, including the YAML, every important field, why we use it with StatefulSets, DNS naming, FQDN, and the complete practical flow. 
+
+---
+
+# 1. What is a Headless Service?
+
+A **Headless Service** is a Kubernetes Service that does **not have a ClusterIP**.
+
+It is created using:
+
+```yaml
+clusterIP: None
+```
+
+Normal Service:
+
+```text
+Client
+  |
+  v
+Service ClusterIP
+  |
+  +----> Pod-1
+  |
+  +----> Pod-2
+  |
+  +----> Pod-3
+```
+
+Headless Service:
+
+```text
+Client
+  |
+  v
+DNS
+  |
+  +----> Pod-1
+  |
+  +----> Pod-2
+  |
+  +----> Pod-3
+```
+
+The important difference is:
+
+> A normal Service provides a virtual IP and load-balancing behavior. A Headless Service does not provide a ClusterIP. Instead, DNS can resolve directly to the individual Pod IPs.
+
+---
+
+# 2. Why Do We Need Headless Services?
+
+This becomes especially useful with **StatefulSets**.
+
+Remember StatefulSet gives us stable Pod names:
+
+```text
+color-ss-0
+color-ss-1
+color-ss-2
+```
+
+And stable storage:
+
+```text
+color-ss-0 → PVC-0 → PV-0
+
+color-ss-1 → PVC-1 → PV-1
+
+color-ss-2 → PVC-2 → PV-2
+```
+
+Now imagine a database.
+
+```text
+MongoDB
+
+mongo-0 → Primary
+mongo-1 → Secondary
+mongo-2 → Secondary
+```
+
+Sometimes the application needs to communicate with a **specific database Pod**.
+
+A normal load-balancing Service doesn't give you that guarantee.
+
+A Headless Service allows stable DNS names such as:
+
+```text
+mongo-0.mongo-svc
+mongo-1.mongo-svc
+mongo-2.mongo-svc
+```
+
+---
+
+# 3. Create the Directory
+
+```bash
+mkdir HEADLESS-SERVICE
+cd HEADLESS-SERVICE
+```
+
+Open the directory in your editor.
+
+---
+
+# 4. Create the Headless Service
+
+```bash
+touch svc.yaml
+```
+
+Use:
+
+```yaml
+apiVersion: v1
+# API version for Service
+
+kind: Service
+# Resource type is Service
+
+metadata:
+  name: color-svc
+  # Name of the Service
+  #
+  # IMPORTANT:
+  # This name will also be used in the StatefulSet
+  # serviceName field.
+
+spec:
+
+  clusterIP: None
+  # This is what makes the Service HEADLESS.
+  #
+  # Normal Service:
+  # clusterIP: 10.x.x.x
+  #
+  # Headless Service:
+  # clusterIP: None
+  #
+  # Kubernetes does not allocate a virtual ClusterIP.
+
+  ports:
+
+    - port: 80
+      # Service port
+
+      targetPort: 80
+      # Port on which the application container is listening
+
+  selector:
+
+    app: color-api
+    # Service selects Pods having:
+    #
+    # app=color-api
+```
+
+---
+
+# 5. The Most Important Line
+
+```yaml
+clusterIP: None
+```
+
+This is the entire reason this Service is called **Headless**.
+
+Without it:
+
+```yaml
+spec:
+  ports:
+    - port: 80
+```
+
+you have a normal ClusterIP Service.
+
+With it:
+
+```yaml
+spec:
+  clusterIP: None
+```
+
+you have a Headless Service.
+
+---
+
+# 6. Why `None`?
+
+Be careful.
+
+This:
+
+```yaml
+clusterIP: None
+```
+
+doesn't mean:
+
+> "I forgot to configure ClusterIP."
+
+It explicitly tells Kubernetes:
+
+> "Do not allocate a ClusterIP for this Service."
+
+---
+
+# 7. Apply the Service
+
+```bash
+kubectl apply -f svc.yaml
+```
+
+Expected:
+
+```text
+service/color-svc created
+```
+
+Check:
+
+```bash
+kubectl get svc
+```
+
+You should see something similar to:
+
+```text
+NAME        TYPE        CLUSTER-IP
+color-svc   ClusterIP   None
+```
+
+The important thing is:
+
+```text
+CLUSTER-IP = None
+```
+
+---
+
+# 8. Normal Service vs Headless Service
+
+## Normal ClusterIP Service
+
+```text
+Service
+
+color-svc
+    |
+    v
+ClusterIP
+10.96.x.x
+    |
+    +---- Pod-0
+    |
+    +---- Pod-1
+    |
+    +---- Pod-2
+```
+
+The client communicates with the Service IP.
+
+Kubernetes handles the traffic distribution.
+
+---
+
+## Headless Service
+
+```text
+color-svc
+    |
+    X
+    |
+No ClusterIP
+    |
+    v
+DNS records
+    |
+    +---- color-ss-0
+    |
+    +---- color-ss-1
+    |
+    +---- color-ss-2
+```
+
+The DNS system can expose the individual Pod addresses.
+
+---
+
+# 9. Why Combine Headless Service + StatefulSet?
+
+This is the key concept.
+
+StatefulSet provides:
+
+```text
+Stable Pod identity
+```
+
+For example:
+
+```text
+color-ss-0
+color-ss-1
+color-ss-2
+```
+
+Headless Service provides:
+
+```text
+Stable DNS identity
+```
+
+Together:
+
+```text
+StatefulSet
+     |
+     +---- color-ss-0
+     |
+     +---- color-ss-1
+     |
+     +---- color-ss-2
+             |
+             v
+       Headless Service
+             |
+             v
+        DNS records
+```
+
+This is extremely useful for distributed applications.
+
+---
+
+# 10. Create the StatefulSet
+
+```bash
+touch color-ss.yaml
+```
+
+Use:
+
+```yaml
+apiVersion: apps/v1
+# API version for StatefulSet
+
+kind: StatefulSet
+# Creates a StatefulSet
+
+metadata:
+  name: color-ss
+  # Name of the StatefulSet
+
+spec:
+
+  selector:
+    matchLabels:
+      app: color-api
+      # StatefulSet manages Pods with this label
+
+  serviceName: color-svc
+  # IMPORTANT
+  #
+  # This must match the name of the Headless Service:
+  #
+  # Service:
+  #   name: color-svc
+  #
+  # StatefulSet:
+  #   serviceName: color-svc
+
+  replicas: 3
+  # Create three Pods:
+  #
+  # color-ss-0
+  # color-ss-1
+  # color-ss-2
+
+  template:
+
+    metadata:
+      labels:
+        app: color-api
+        # Pods get this label
+
+    spec:
+
+      containers:
+
+        - name: color-api
+          # Container name
+
+          image: lmacademy/color-api:1.2.1
+          # Application image
+
+          ports:
+
+            - containerPort: 80
+              # Application listens on port 80
+
+              name: web
+              # Name given to this container port
+
+          volumeMounts:
+
+            - name: dummy-data
+              # Must match volumeClaimTemplates name
+
+              mountPath: /tmp/data
+              # PVC will be mounted here
+
+  volumeClaimTemplates:
+
+    - metadata:
+
+        name: dummy-data
+        # PVC template name
+
+      spec:
+
+        accessModes:
+          - ReadWriteOnce
+          # Volume can be mounted read/write by one node
+
+        storageClassName: standard
+        # Use Minikube's standard StorageClass
+        #
+        # This enables dynamic provisioning
+
+        resources:
+
+          requests:
+
+            storage: 1Gi
+            # Each Pod requests 1Gi storage
+```
+
+---
+
+# 11. Important: `serviceName`
+
+This line:
+
+```yaml
+serviceName: color-svc
+```
+
+must correspond to:
+
+```yaml
+metadata:
+  name: color-svc
+```
+
+from the Service.
+
+So:
+
+```text
+Service
+
+color-svc
+```
+
+and:
+
+```text
+StatefulSet
+
+serviceName: color-svc
+```
+
+must match.
+
+Think:
+
+```text
+Headless Service
+       |
+       | color-svc
+       |
+       v
+StatefulSet
+       |
+       +---- color-ss-0
+       +---- color-ss-1
+       +---- color-ss-2
+```
+
+---
+
+# 12. Apply the StatefulSet
+
+```bash
+kubectl apply -f color-ss.yaml
+```
+
+Watch the Pods:
+
+```bash
+kubectl get pods --watch
+```
+
+You should see:
+
+```text
+color-ss-0
+color-ss-1
+color-ss-2
+```
+
+StatefulSet creates them in order.
+
+```text
+color-ss-0
+     ↓
+color-ss-1
+     ↓
+color-ss-2
+```
+
+---
+
+# 13. Check the Service
+
+```bash
+kubectl describe svc color-svc
+```
+
+Once the StatefulSet Pods are running, the Service should have endpoints corresponding to the Pods.
+
+Conceptually:
+
+```text
+Endpoints:
+
+Pod-0 IP
+Pod-1 IP
+Pod-2 IP
+```
+
+This is important.
+
+The Headless Service doesn't have a ClusterIP, but it can still discover the Pods selected by:
+
+```yaml
+selector:
+  app: color-api
+```
+
+---
+
+# 14. How Does the Service Find the Pods?
+
+The Service has:
+
+```yaml
+selector:
+  app: color-api
+```
+
+The StatefulSet Pod has:
+
+```yaml
+labels:
+  app: color-api
+```
+
+Therefore:
+
+```text
+Service selector
+       |
+       | app=color-api
+       |
+       v
+Pods
+ ├── color-ss-0
+ ├── color-ss-1
+ └── color-ss-2
+```
+
+The labels connect the Service to the Pods.
+
+---
+
+# 15. Create a Debug Pod
+
+We need another Pod from which we can run `curl`.
+
+Create:
+
+```bash
+touch debug.yaml
+```
+
+```yaml
+apiVersion: v1
+# Kubernetes API version
+
+kind: Pod
+# Create a Pod
+
+metadata:
+  name: curl
+  # Pod name
+
+  labels:
+    name: curl
+    # Pod label
+
+spec:
+
+  containers:
+
+    - name: curl
+      # Container name
+
+      image: lmacademy/alpine-curl:1.0.0
+      # Image containing curl
+
+      resources:
+
+        limits:
+          memory: "128Mi"
+          cpu: "500m"
+          # Resource limits
+```
+
+---
+
+# 16. Create Debug Pod
+
+```bash
+kubectl apply -f debug.yaml
+```
+
+Check:
+
+```bash
+kubectl get pods
+```
+
+You should see:
+
+```text
+curl
+color-ss-0
+color-ss-1
+color-ss-2
+```
+
+---
+
+# 17. Enter the Debug Pod
+
+```bash
+kubectl exec -it curl -- sh
+```
+
+Now you are inside the container.
+
+You can use:
+
+```bash
+curl
+```
+
+to communicate with your StatefulSet Pods.
+
+---
+
+# 18. Access a Specific StatefulSet Pod
+
+Run:
+
+```bash
+curl color-ss-0.color-svc
+```
+
+The important format is:
+
+```text
+<statefulset-pod-name>.<headless-service-name>
+```
+
+So:
+
+```text
+color-ss-0.color-svc
+```
+
+means:
+
+```text
+Pod:
+color-ss-0
+
+Service:
+color-svc
+```
+
+---
+
+# 19. Access the API
+
+```bash
+curl color-ss-0.color-svc/api
+```
+
+You are asking DNS to resolve the specific StatefulSet Pod and then sending the HTTP request to `/api`.
+
+---
+
+# 20. Access Another Pod
+
+```bash
+curl color-ss-2.color-svc/api
+```
+
+Now you're addressing:
+
+```text
+color-ss-2
+```
+
+rather than:
+
+```text
+color-ss-0
+```
+
+This is the important benefit.
+
+You can target a **specific StatefulSet replica** using its stable DNS name.
+
+---
+
+# 21. Why Is This Useful?
+
+Imagine:
+
+```text
+MongoDB
+
+mongo-0 → Primary
+mongo-1 → Secondary
+mongo-2 → Secondary
+```
+
+You might need to communicate specifically with:
+
+```text
+mongo-0
+```
+
+Instead of randomly reaching one of the replicas.
+
+A Headless Service allows stable DNS addressing such as:
+
+```text
+mongo-0.mongo-svc
+```
+
+---
+
+# 22. What Is FQDN?
+
+You mentioned:
+
+```text
+color-ss-2.color-svc.default.svc.cluster.local
+```
+
+This is an **FQDN**.
+
+FQDN means:
+
+> **Fully Qualified Domain Name**
+
+It provides the complete DNS path to the Kubernetes Service/Pod.
+
+---
+
+# 23. Break the FQDN Down
+
+Take:
+
+```text
+color-ss-2.color-svc.default.svc.cluster.local
+```
+
+Break it into pieces:
+
+```text
+color-ss-2
+     .
+color-svc
+     .
+default
+     .
+svc
+     .
+cluster.local
+```
+
+Each part has meaning.
+
+---
+
+# 24. Part 1 — `color-ss-2`
+
+```text
+color-ss-2
+```
+
+This is the **specific StatefulSet Pod name**.
+
+Our StatefulSet created:
+
+```text
+color-ss-0
+color-ss-1
+color-ss-2
+```
+
+So:
+
+```text
+color-ss-2
+```
+
+means:
+
+> "I want to reach StatefulSet replica number 2."
+
+---
+
+# 25. Part 2 — `color-svc`
+
+```text
+color-svc
+```
+
+This is the **Headless Service name**.
+
+From:
+
+```yaml
+metadata:
+  name: color-svc
+```
+
+The Service provides the DNS relationship for the StatefulSet Pods.
+
+---
+
+# 26. Part 3 — `default`
+
+```text
+default
+```
+
+This is the **Kubernetes namespace**.
+
+If you created everything in:
+
+```text
+namespace: default
+```
+
+then the DNS contains:
+
+```text
+default
+```
+
+If your StatefulSet were in:
+
+```text
+production
+```
+
+you would use:
+
+```text
+color-ss-2.color-svc.production.svc.cluster.local
+```
+
+---
+
+# 27. Part 4 — `svc`
+
+```text
+svc
+```
+
+This identifies the Kubernetes Service DNS domain.
+
+It tells Kubernetes DNS:
+
+> "This name belongs to a Service."
+
+---
+
+# 28. Part 5 — `cluster.local`
+
+```text
+cluster.local
+```
+
+This is the default Kubernetes cluster DNS domain.
+
+So the complete name:
+
+```text
+color-ss-2.color-svc.default.svc.cluster.local
+```
+
+can be understood as:
+
+```text
+Pod
+  ↓
+color-ss-2
+
+Service
+  ↓
+color-svc
+
+Namespace
+  ↓
+default
+
+Kubernetes Service DNS
+  ↓
+svc
+
+Cluster DNS domain
+  ↓
+cluster.local
+```
+
+---
+
+# 29. Short Name vs FQDN
+
+Inside the same namespace, you can commonly use:
+
+```bash
+curl color-ss-2.color-svc
+```
+
+This is a **shorter DNS name**.
+
+You can also use the complete FQDN:
+
+```bash
+curl color-ss-2.color-svc.default.svc.cluster.local
+```
+
+The FQDN gives the complete DNS path.
+
+---
+
+# 30. What If We Are in Another Namespace?
+
+Suppose your StatefulSet is in:
+
+```text
+production
+```
+
+Then:
+
+```text
+color-ss-2.color-svc.production.svc.cluster.local
+```
+
+The namespace changes from:
+
+```text
+default
+```
+
+to:
+
+```text
+production
+```
+
+This is why FQDNs are useful when communicating across namespaces.
+
+---
+
+# 31. DNS Naming Pattern
+
+For a StatefulSet + Headless Service, remember:
+
+```text
+<pod-name>.<service-name>.<namespace>.svc.cluster.local
+```
+
+For your example:
+
+```text
+<color-ss-2>.<color-svc>.<default>.svc.cluster.local
+```
+
+Result:
+
+```text
+color-ss-2.color-svc.default.svc.cluster.local
+```
+
+---
+
+# 32. Very Important Difference
+
+Don't confuse:
+
+```text
+color-svc
+```
+
+with:
+
+```text
+color-ss-2.color-svc
+```
+
+### `color-svc`
+
+Refers to the Service.
+
+### `color-ss-2.color-svc`
+
+Targets a specific StatefulSet Pod through the Headless Service DNS naming convention.
+
+---
+
+# 33. What Happens If We Curl the Service Name?
+
+You can also try:
+
+```bash
+curl color-svc
+```
+
+A Headless Service doesn't have a ClusterIP.
+
+DNS can return the addresses of the selected Pods rather than a single virtual IP.
+
+Therefore, if you want a **specific replica**, use:
+
+```bash
+curl color-ss-0.color-svc
+```
+
+or:
+
+```bash
+curl color-ss-1.color-svc
+```
+
+or:
+
+```bash
+curl color-ss-2.color-svc
+```
+
+Do not rely on the Service-only name to select a particular Pod.
+
+---
+
+# 34. Normal Service vs Headless Service
+
+## Normal Service
+
+```text
+                 Client
+                   |
+                   v
+              Service IP
+             10.96.10.20
+                   |
+           +-------+-------+
+           |       |       |
+           v       v       v
+         Pod-0   Pod-1   Pod-2
+```
+
+The Service acts as a stable virtual endpoint.
+
+---
+
+## Headless Service
+
+```text
+                 Client
+                   |
+                   v
+                  DNS
+                   |
+       +-----------+-----------+
+       |           |           |
+       v           v           v
+   Pod-0 IP     Pod-1 IP    Pod-2 IP
+```
+
+No ClusterIP.
+
+DNS provides Pod address information.
+
+---
+
+# 35. Why Headless Service + StatefulSet Is Powerful
+
+StatefulSet gives:
+
+```text
+Stable Pod Name
+```
+
+Headless Service gives:
+
+```text
+Stable DNS
+```
+
+Persistent storage gives:
+
+```text
+Stable Data
+```
+
+Together:
+
+```text
+          StatefulSet
+               |
+       +-------+-------+
+       |       |       |
+     Pod-0   Pod-1   Pod-2
+       |       |       |
+      PVC     PVC     PVC
+       |       |       |
+      PV      PV      PV
+       
+       +
+       
+  Headless Service
+       |
+       +----------------+
+       |       |        |
+     DNS-0   DNS-1    DNS-2
+```
+
+This is the standard pattern for many distributed stateful applications.
+
+---
+
+# 36. Real-World Scenario 1 — MongoDB
+
+Suppose:
+
+```text
+mongodb-0
+mongodb-1
+mongodb-2
+```
+
+MongoDB members need to know each other's identities.
+
+Using a Headless Service:
+
+```text
+mongodb-0.mongodb
+mongodb-1.mongodb
+mongodb-2.mongodb
+```
+
+Each member can discover the other members using stable DNS names.
+
+This is much more useful than sending all database traffic through a generic load-balancing Service.
+
+---
+
+# 37. Real-World Scenario 2 — Kafka
+
+Kafka brokers:
+
+```text
+kafka-0
+kafka-1
+kafka-2
+```
+
+Kafka needs stable broker identities.
+
+Headless Service provides names like:
+
+```text
+kafka-0.kafka
+kafka-1.kafka
+kafka-2.kafka
+```
+
+Each broker can reliably identify and communicate with other brokers.
+
+---
+
+# 38. Real-World Scenario 3 — PostgreSQL
+
+Imagine a PostgreSQL cluster:
+
+```text
+postgres-0
+postgres-1
+postgres-2
+```
+
+You may have:
+
+```text
+postgres-0 = Primary
+postgres-1 = Replica
+postgres-2 = Replica
+```
+
+The application or replication system may need to communicate with a particular database instance.
+
+Stable StatefulSet names + Headless Service DNS make this possible.
+
+---
+
+# 39. Why Not Just Use a Normal Service?
+
+Suppose:
+
+```text
+Service
+   |
+   +---- Pod-0
+   +---- Pod-1
+   +---- Pod-2
+```
+
+You send:
+
+```bash
+curl my-service
+```
+
+The Service is designed to provide a common endpoint for the selected Pods.
+
+You don't get a reliable way to say:
+
+> "I specifically want Pod-2."
+
+With StatefulSet + Headless Service:
+
+```bash
+curl color-ss-2.color-svc
+```
+
+you can address that specific replica.
+
+---
+
+# 40. Complete Hands-on Flow
+
+```text
+Step 1
+Create Headless Service
+
+        ↓
+
+color-svc
+clusterIP: None
+
+        ↓
+
+Step 2
+Create StatefulSet
+
+        ↓
+
+color-ss-0
+color-ss-1
+color-ss-2
+
+        ↓
+
+Step 3
+StatefulSet creates PVCs
+
+        ↓
+
+PVC-0
+PVC-1
+PVC-2
+
+        ↓
+
+Step 4
+Dynamic provisioning creates PVs
+
+        ↓
+
+PV-0
+PV-1
+PV-2
+
+        ↓
+
+Step 5
+Headless Service discovers Pods
+
+        ↓
+
+DNS records
+
+        ↓
+
+Step 6
+Debug Pod uses curl
+
+        ↓
+
+curl color-ss-0.color-svc
+```
+
+---
+
+# 41. Commands — Complete Practical Cheat Sheet
+
+### Create directory
+
+```bash
+mkdir HEADLESS-SERVICE
+cd HEADLESS-SERVICE
+```
+
+### Create Service
+
+```bash
+touch svc.yaml
+```
+
+### Apply Service
+
+```bash
+kubectl apply -f svc.yaml
+```
+
+### Check Service
+
+```bash
+kubectl get svc
+```
+
+### Describe Service
+
+```bash
+kubectl describe svc color-svc
+```
+
+### Create StatefulSet
+
+```bash
+touch color-ss.yaml
+```
+
+### Apply StatefulSet
+
+```bash
+kubectl apply -f color-ss.yaml
+```
+
+### Watch Pods
+
+```bash
+kubectl get pods --watch
+```
+
+### Check StatefulSet
+
+```bash
+kubectl get statefulset
+```
+
+### Check PVCs
+
+```bash
+kubectl get pvc
+```
+
+### Check PVs
+
+```bash
+kubectl get pv
+```
+
+### Create Debug Pod
+
+```bash
+kubectl apply -f debug.yaml
+```
+
+### Enter Debug Pod
+
+```bash
+kubectl exec -it curl -- sh
+```
+
+### Access Pod 0
+
+```bash
+curl color-ss-0.color-svc
+```
+
+### Access Pod 0 API
+
+```bash
+curl color-ss-0.color-svc/api
+```
+
+### Access Pod 2 API
+
+```bash
+curl color-ss-2.color-svc/api
+```
+
+### Access using FQDN
+
+```bash
+curl color-ss-2.color-svc.default.svc.cluster.local
+```
+
+---
+
+# 42. Cleanup
+
+Because this StatefulSet uses dynamically provisioned storage, clean up carefully.
+
+First delete the StatefulSet:
+
+```bash
+kubectl delete statefulset color-ss
+```
+
+Delete the debug Pod:
+
+```bash
+kubectl delete pod curl
+```
+
+Delete the Service:
+
+```bash
+kubectl delete service color-svc
+```
+
+Check PVCs:
+
+```bash
+kubectl get pvc
+```
+
+The StatefulSet's PVCs can remain after the StatefulSet is deleted.
+
+If this is your test environment, you can delete them:
+
+```bash
+kubectl delete pvc --all
+```
+
+⚠️ This deletes **all PVCs in the current namespace**, so don't use it blindly in a production cluster.
+
+Because the `standard` StorageClass uses dynamic provisioning with a `Delete` reclaim policy in your Minikube setup, deleting those PVCs will cause the dynamically provisioned PVs/backing storage to be cleaned up.
+
+---
+
+# 43. Most Important Things to Remember
+
+Memorize this chain:
+
+```text
+StatefulSet
+     ↓
+Stable Pod Name
+     ↓
+color-ss-0
+color-ss-1
+color-ss-2
+
+Headless Service
+     ↓
+No ClusterIP
+     ↓
+DNS-based Pod discovery
+     ↓
+color-ss-0.color-svc
+color-ss-1.color-svc
+color-ss-2.color-svc
+```
+
+And the FQDN:
+
+```text
+color-ss-2.color-svc.default.svc.cluster.local
+```
+
+means:
+
+```text
+color-ss-2
+    ↓
+Specific Pod
+
+color-svc
+    ↓
+Headless Service
+
+default
+    ↓
+Namespace
+
+svc
+    ↓
+Kubernetes Service DNS
+
+cluster.local
+    ↓
+Kubernetes cluster DNS domain
+```
+
+### One-line interview answer
+
+> **A Headless Service is a Service with `clusterIP: None` that doesn't provide a virtual ClusterIP; instead, it enables DNS-based discovery of the individual Pods, making it particularly useful with StatefulSets where Pods have stable identities and need to communicate with specific replicas.**
