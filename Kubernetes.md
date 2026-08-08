@@ -11420,3 +11420,1395 @@ The StatefulSet recreates `demo-ss-0` with the same name and automatically reatt
 ### Q5. Why is one PersistentVolume still in the `Available` state?
 
 Because only two replicas were created. Two PVCs were generated and bound, leaving the third PV unused and therefore still `Available`.
+
+
+
+# StatefulSets with Dynamically Provisioned Persistent Volumes
+
+This is the next step after the previous hands-on where we manually created PVs.
+
+Previously:
+
+```text
+StatefulSet
+    ↓
+PVC
+    ↓
+Manually created PV
+    ↓
+Local directory
+/mnt/disks/ss-0
+/mnt/disks/ss-1
+```
+
+Now we will use **Dynamic Provisioning**.
+
+```text
+StatefulSet
+    ↓
+PVC automatically created
+    ↓
+StorageClass: standard
+    ↓
+Provisioner automatically creates PV
+    ↓
+Storage directory automatically created
+```
+
+The important change is:
+
+> **We no longer manually create the PersistentVolumes. The StorageClass creates them for us.**
+
+These notes follow the StatefulSet dynamic-provisioning hands-on you provided. 
+
+---
+
+# 1. Static vs Dynamic Provisioning
+
+## Static provisioning — what we did before
+
+We manually created:
+
+```text
+PV-0
+PV-1
+PV-2
+```
+
+For example:
+
+```yaml
+local:
+  path: /mnt/disks/ss-0
+```
+
+We had to SSH into Minikube and create:
+
+```bash
+sudo mkdir -p /mnt/disks/ss-0
+sudo mkdir -p /mnt/disks/ss-1
+sudo mkdir -p /mnt/disks/ss-2
+```
+
+So we were manually managing the storage.
+
+---
+
+# 2. Dynamic Provisioning — what we're doing now
+
+Now we don't create PV YAMLs manually.
+
+We only tell Kubernetes:
+
+> "I need 128Mi/1Gi of storage using the `standard` StorageClass."
+
+Kubernetes then creates the PV automatically.
+
+```text
+PVC
+ │
+ ▼
+StorageClass
+ │
+ ▼
+Provisioner
+ │
+ ▼
+PV automatically created
+ │
+ ▼
+Storage backend automatically created
+```
+
+On Minikube, the `standard` StorageClass uses the Minikube hostpath provisioner, so the backing directories appear under:
+
+```text
+/tmp/hostpath-provisioner/default/
+```
+
+---
+
+# 3. Check the StorageClass
+
+Before creating the StatefulSet, check the available StorageClasses.
+
+```bash
+kubectl get storageclass
+```
+
+Example:
+
+```text
+NAME                 PROVISIONER                RECLAIMPOLICY
+standard (default)   k8s.io/minikube-hostpath   Delete
+```
+
+Here:
+
+```text
+standard
+```
+
+is the **StorageClass name**.
+
+And:
+
+```text
+(default)
+```
+
+means it is currently the default StorageClass.
+
+These are two separate things.
+
+---
+
+# 4. Describe the StorageClass
+
+```bash
+kubectl describe storageclass standard
+```
+
+Look for:
+
+```text
+Provisioner:
+k8s.io/minikube-hostpath
+
+ReclaimPolicy:
+Delete
+```
+
+The important part for this hands-on is:
+
+```text
+ReclaimPolicy: Delete
+```
+
+This means when the dynamically created PVC is deleted, the provisioner can delete the dynamically created PV and its backing storage.
+
+---
+
+# 5. Important Migration
+
+Previously your StatefulSet was using:
+
+```yaml
+storageClassName: local-storage
+```
+
+That was connected to the manually created Local PVs.
+
+Now we change it to:
+
+```yaml
+storageClassName: standard
+```
+
+This tells Kubernetes:
+
+> "When my StatefulSet creates PVCs, use the `standard` StorageClass to dynamically provision the storage."
+
+---
+
+# 6. Why Explicitly Specify `storageClassName`?
+
+You could potentially omit:
+
+```yaml
+storageClassName: standard
+```
+
+if `standard` is the default StorageClass.
+
+But explicitly specifying it is better for predictable configuration.
+
+For example:
+
+```yaml
+storageClassName: standard
+```
+
+means:
+
+> Always use the StorageClass named `standard`.
+
+It does **not** mean:
+
+> Use whichever StorageClass happens to be the default.
+
+This distinction becomes important if the cluster administrator changes the default StorageClass later.
+
+---
+
+# 7. Dynamic PVC Example
+
+Your example PVC is:
+
+```yaml
+apiVersion: v1                       # Kubernetes API version
+kind: PersistentVolumeClaim          # Create a PVC
+
+metadata:
+  name: dynamic-pv-example           # Name of the PVC
+
+spec:
+
+  resources:
+    requests:
+      storage: 1Gi                   # Request 1Gi of storage
+
+  volumeMode: Filesystem              # Mount storage as a filesystem
+
+  storageClassName: standard          # Use the "standard" StorageClass
+
+  accessModes:
+    - ReadWriteOnce                   # Read/write access from one node
+```
+
+### Important
+
+Notice what is **missing**.
+
+There is no:
+
+```yaml
+kind: PersistentVolume
+```
+
+We are only creating the PVC.
+
+Kubernetes will create the PV automatically.
+
+---
+
+# 8. But for StatefulSet We Usually Use `volumeClaimTemplates`
+
+For the StatefulSet, you don't normally create this PVC manually.
+
+Instead:
+
+```yaml
+volumeClaimTemplates:
+```
+
+acts as a PVC template.
+
+Example:
+
+```yaml
+volumeClaimTemplates:
+
+  - metadata:
+      name: local-volume
+
+    spec:
+      accessModes:
+        - ReadWriteOnce
+
+      storageClassName: standard
+
+      resources:
+        requests:
+          storage: 128Mi
+```
+
+This tells Kubernetes:
+
+> "For every StatefulSet Pod, create one PVC with these specifications."
+
+---
+
+# 9. Complete StatefulSet YAML
+
+Here is the dynamic-provisioning version of the StatefulSet with comments.
+
+```yaml
+apiVersion: apps/v1
+# API version used for StatefulSet
+
+kind: StatefulSet
+# Tells Kubernetes that we are creating a StatefulSet
+
+metadata:
+  name: demo-ss
+  # Name of the StatefulSet
+
+spec:
+
+  serviceName: busybox
+  # Service associated with the StatefulSet.
+  # Normally this is a Headless Service.
+  # It provides stable DNS identities for StatefulSet Pods.
+
+  replicas: 2
+  # We want two Pods:
+  #
+  # demo-ss-0
+  # demo-ss-1
+
+  selector:
+    matchLabels:
+      app: busybox
+      # StatefulSet manages Pods having this label
+
+  template:
+    # Pod template.
+    # Every Pod created by this StatefulSet
+    # is based on this template.
+
+    metadata:
+      labels:
+        app: busybox
+        # Label assigned to every Pod
+
+    spec:
+
+      containers:
+
+        - name: busybox
+          # Container name
+
+          image: busybox:1.36.1
+          # Container image
+
+          command:
+            - sh
+            - -c
+            - sleep 3600
+            # Keep the container running for 3600 seconds
+
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
+              # Resource limits for the container
+
+          volumeMounts:
+
+            - name: local-volume
+              # Must match the name in volumeClaimTemplates
+
+              mountPath: /mnt/local
+              # Storage will appear inside the container here
+
+  volumeClaimTemplates:
+
+    - metadata:
+
+        name: local-volume
+        # Name of the PVC template
+        #
+        # Kubernetes uses this to generate
+        # one PVC for each StatefulSet Pod
+
+      spec:
+
+        accessModes:
+          - ReadWriteOnce
+          # PVC requests RWO storage
+
+        storageClassName: standard
+        # IMPORTANT:
+        # Use the "standard" StorageClass
+        #
+        # This causes dynamic provisioning
+
+        resources:
+
+          requests:
+
+            storage: 128Mi
+            # Each StatefulSet Pod requests 128Mi
+```
+
+---
+
+# 10. The Most Important Part
+
+This is the key change from static provisioning:
+
+```yaml
+storageClassName: standard
+```
+
+Previously:
+
+```yaml
+storageClassName: local-storage
+```
+
+Now:
+
+```yaml
+storageClassName: standard
+```
+
+And we **remove the manually created PV requirement**.
+
+---
+
+# 11. Apply the StatefulSet
+
+```bash
+kubectl apply -f stateful-set.yaml
+```
+
+Check Pods:
+
+```bash
+kubectl get pods
+```
+
+You should get:
+
+```text
+NAME       READY   STATUS
+demo-ss-0  1/1     Running
+demo-ss-1  1/1     Running
+```
+
+Remember:
+
+```text
+demo-ss-0
+demo-ss-1
+```
+
+are stable names.
+
+---
+
+# 12. Check PVCs
+
+```bash
+kubectl get pvc
+```
+
+You should see two PVCs.
+
+Something similar to:
+
+```text
+NAME                     STATUS   VOLUME
+local-volume-demo-ss-0   Bound    pvc-xxxxx
+local-volume-demo-ss-1   Bound    pvc-yyyyy
+```
+
+Why two?
+
+Because:
+
+```yaml
+replicas: 2
+```
+
+Therefore:
+
+```text
+Pod 0 → PVC 0
+Pod 1 → PVC 1
+```
+
+---
+
+# 13. What Created the PVCs?
+
+You didn't manually run:
+
+```bash
+kubectl apply -f pvc.yaml
+```
+
+Instead, StatefulSet read:
+
+```yaml
+volumeClaimTemplates:
+```
+
+and automatically created:
+
+```text
+PVC-0
+PVC-1
+```
+
+---
+
+# 14. What Created the PVs?
+
+The PVCs requested:
+
+```yaml
+storageClassName: standard
+```
+
+Therefore Kubernetes asked the `standard` provisioner to create storage.
+
+The flow is:
+
+```text
+StatefulSet
+      │
+      │ volumeClaimTemplates
+      ▼
+PVC-0              PVC-1
+      │                │
+      │                │
+      ▼                ▼
+StorageClass: standard
+      │                │
+      ▼                ▼
+Dynamic Provisioner
+      │                │
+      ▼                ▼
+PV-0               PV-1
+```
+
+---
+
+# 15. Check the PVs
+
+```bash
+kubectl get pv
+```
+
+You should see two dynamically created PVs:
+
+```text
+NAME                                       STATUS
+pvc-xxxx                                   Bound
+pvc-yyyy                                   Bound
+```
+
+You may also see other PVs depending on what you have previously created.
+
+---
+
+# 16. Why are the PV Names Random?
+
+Because dynamically provisioned PVs are generated by Kubernetes/the provisioner.
+
+You didn't write:
+
+```yaml
+metadata:
+  name: ss-0
+```
+
+Instead Kubernetes generates something like:
+
+```text
+pvc-2c8d...
+pvc-7a91...
+```
+
+The important relationship is:
+
+```text
+PVC
+ ↓
+PV
+```
+
+not the PV name itself.
+
+---
+
+# 17. Describe the Pod
+
+Run:
+
+```bash
+kubectl describe pod demo-ss-0
+```
+
+Look at the **Volumes** section.
+
+You will see something similar to:
+
+```text
+Volumes:
+
+local-volume:
+  Type: PersistentVolumeClaim
+  ClaimName: local-volume-demo-ss-0
+```
+
+This tells us:
+
+```text
+demo-ss-0
+    ↓
+local-volume-demo-ss-0
+    ↓
+Dynamically created PV
+```
+
+---
+
+# 18. Why Does the Pod Use a PVC?
+
+The Pod does not directly request a physical disk.
+
+The architecture is:
+
+```text
+Pod
+ │
+ ▼
+PVC
+ │
+ ▼
+PV
+ │
+ ▼
+StorageClass / Provisioner
+ │
+ ▼
+Actual Storage
+```
+
+This abstraction is one of the important ideas in Kubernetes storage.
+
+---
+
+# 19. Check Minikube Storage
+
+SSH into Minikube:
+
+```bash
+minikube ssh
+```
+
+Go to:
+
+```bash
+cd /tmp/hostpath-provisioner/default/
+```
+
+List:
+
+```bash
+ls
+```
+
+You should see directories corresponding to the dynamically provisioned PVCs.
+
+For example:
+
+```text
+pvc-xxxx...
+pvc-yyyy...
+```
+
+The exact names can vary.
+
+---
+
+# 20. Why Are These Directories Created Automatically?
+
+Because the Minikube `standard` StorageClass uses the hostpath provisioner.
+
+You requested:
+
+```text
+PVC
+1Gi
+```
+
+The provisioner creates the backing storage.
+
+Conceptually:
+
+```text
+PVC
+ │
+ ▼
+HostPath Provisioner
+ │
+ ▼
+/tmp/hostpath-provisioner/default/...
+```
+
+This is why you didn't need to manually run:
+
+```bash
+mkdir /mnt/disks/ss-0
+mkdir /mnt/disks/ss-1
+```
+
+Dynamic provisioning handled the backing storage creation.
+
+---
+
+# 21. Static vs Dynamic — Very Important
+
+### Static
+
+You manually create:
+
+```text
+Directory
+   ↓
+PV
+   ↓
+PVC
+   ↓
+Pod
+```
+
+### Dynamic
+
+You create:
+
+```text
+StorageClass
+   ↓
+PVC
+   ↓
+PV automatically created
+   ↓
+Pod
+```
+
+For StatefulSet:
+
+```text
+StatefulSet
+   ↓
+volumeClaimTemplates
+   ↓
+PVC automatically created
+   ↓
+StorageClass
+   ↓
+PV automatically created
+   ↓
+Pod
+```
+
+---
+
+# 22. Delete the StatefulSet
+
+Now let's test what happens when we delete the StatefulSet.
+
+```bash
+kubectl delete statefulset demo-ss
+```
+
+Check:
+
+```bash
+kubectl get pods
+```
+
+The Pods should be gone.
+
+But now check:
+
+```bash
+kubectl get pvc
+```
+
+### Important:
+
+The PVCs still exist.
+
+This is intentional.
+
+---
+
+# 23. Why Don't the PVCs Get Deleted?
+
+Because StatefulSets are designed for **stateful applications**.
+
+Imagine:
+
+```text
+MySQL Pod
+    ↓
+PVC
+    ↓
+Database
+```
+
+If deleting the StatefulSet automatically deleted the PVC:
+
+```text
+Delete StatefulSet
+        ↓
+Delete PVC
+        ↓
+Delete Storage
+        ↓
+Database data lost
+```
+
+That would be dangerous.
+
+Therefore StatefulSet deletion does **not automatically delete the PVCs**.
+
+---
+
+# 24. Check PVs
+
+```bash
+kubectl get pv
+```
+
+You should find that the dynamically provisioned PVs still exist and are associated with the PVCs.
+
+---
+
+# 25. Delete the PVCs
+
+Now explicitly delete the PVCs:
+
+```bash
+kubectl delete pvc --all
+```
+
+⚠️ **Be careful with this command.**
+
+```bash
+kubectl delete pvc --all
+```
+
+deletes **all PVCs in the current namespace**.
+
+For a learning Minikube cluster this may be okay, but in production you should normally specify the exact PVC names.
+
+For example:
+
+```bash
+kubectl delete pvc local-volume-demo-ss-0
+kubectl delete pvc local-volume-demo-ss-1
+```
+
+---
+
+# 26. What Happens When PVCs Are Deleted?
+
+Your StorageClass has:
+
+```text
+ReclaimPolicy: Delete
+```
+
+Therefore:
+
+```text
+Delete PVC
+    ↓
+Provisioner notices PVC deletion
+    ↓
+Underlying PV is deleted
+    ↓
+Underlying dynamically provisioned storage is deleted
+```
+
+---
+
+# 27. Check PVs
+
+```bash
+kubectl get pv
+```
+
+The dynamically created PVs should disappear after the provisioner completes cleanup.
+
+Why?
+
+Because:
+
+```text
+StorageClass
+    ↓
+reclaimPolicy: Delete
+```
+
+---
+
+# 28. Check Minikube Directory
+
+SSH:
+
+```bash
+minikube ssh
+```
+
+Then:
+
+```bash
+cd /tmp/hostpath-provisioner/default/
+```
+
+Run:
+
+```bash
+ls
+```
+
+The directories created for the deleted PVCs should normally be removed by the provisioner.
+
+This demonstrates the complete dynamic provisioning lifecycle.
+
+---
+
+# 29. Complete Lifecycle
+
+```text
+        StatefulSet
+             │
+             │ volumeClaimTemplates
+             ▼
+          PVC-0
+          PVC-1
+             │
+             │ storageClassName: standard
+             ▼
+       StorageClass
+             │
+             ▼
+        Provisioner
+             │
+       ┌─────┴─────┐
+       ▼           ▼
+      PV-0        PV-1
+       │           │
+       ▼           ▼
+    Storage      Storage
+       │           │
+       ▼           ▼
+   demo-ss-0    demo-ss-1
+```
+
+When StatefulSet is deleted:
+
+```text
+Delete StatefulSet
+        │
+        ├── Pods deleted
+        │
+        └── PVCs remain
+```
+
+When PVCs are deleted:
+
+```text
+Delete PVC
+    │
+    ▼
+ReclaimPolicy = Delete
+    │
+    ▼
+PV deleted
+    │
+    ▼
+Backing storage deleted
+```
+
+---
+
+# 30. Why `Delete` Is Important Here
+
+Check:
+
+```bash
+kubectl get storageclass standard
+```
+
+You can also inspect:
+
+```bash
+kubectl describe storageclass standard
+```
+
+You'll find:
+
+```text
+ReclaimPolicy: Delete
+```
+
+This is why dynamically created PVs are cleaned up when their PVCs are deleted.
+
+---
+
+# 31. What if ReclaimPolicy Were `Retain`?
+
+Suppose the StorageClass used:
+
+```text
+ReclaimPolicy: Retain
+```
+
+Then:
+
+```text
+Delete PVC
+    ↓
+PV remains
+    ↓
+Data remains
+```
+
+The storage would require manual cleanup/recovery.
+
+This is useful when data is more important than automatic cleanup.
+
+For example:
+
+```text
+Production Database
+        ↓
+Important customer data
+        ↓
+Retain
+```
+
+You generally don't want a simple PVC deletion to immediately destroy valuable data.
+
+---
+
+# 32. Why Dynamic Provisioning Is Better for This StatefulSet
+
+With static provisioning, we had to do:
+
+```bash
+minikube ssh
+
+mkdir /mnt/disks/ss-0
+mkdir /mnt/disks/ss-1
+mkdir /mnt/disks/ss-2
+```
+
+Then create:
+
+```text
+PV-0
+PV-1
+PV-2
+```
+
+Then StatefulSet creates:
+
+```text
+PVC-0
+PVC-1
+```
+
+That's a lot of manual work.
+
+With dynamic provisioning:
+
+```text
+StatefulSet
+     ↓
+volumeClaimTemplates
+     ↓
+PVC
+     ↓
+StorageClass
+     ↓
+PV automatically
+     ↓
+Storage automatically
+```
+
+Much less manual administration.
+
+---
+
+# 33. Real-World Example: AWS EKS
+
+On AWS, instead of Minikube's:
+
+```text
+k8s.io/minikube-hostpath
+```
+
+you might use the AWS EBS CSI driver:
+
+```text
+ebs.csi.aws.com
+```
+
+Then:
+
+```text
+StatefulSet
+    ↓
+PVC
+    ↓
+StorageClass
+    ↓
+EBS CSI Driver
+    ↓
+AWS EBS Volume
+```
+
+You don't SSH into a Kubernetes node and manually create directories.
+
+The cloud storage system creates the actual disk.
+
+---
+
+# 34. Static vs Dynamic StatefulSet
+
+### Static
+
+```text
+                    StatefulSet
+                         │
+                    volumeClaimTemplate
+                         │
+                         ▼
+                       PVC
+                         │
+                         ▼
+                 Manually created PV
+                         │
+                         ▼
+                  Manually created
+                    node directory
+```
+
+### Dynamic
+
+```text
+                    StatefulSet
+                         │
+                    volumeClaimTemplate
+                         │
+                         ▼
+                       PVC
+                         │
+                         ▼
+                  StorageClass
+                         │
+                         ▼
+                    Provisioner
+                         │
+                         ▼
+                  PV automatically
+                         │
+                         ▼
+                  Storage automatically
+```
+
+---
+
+# 35. Commands for Your Hands-On
+
+## Check StorageClass
+
+```bash
+kubectl get storageclass
+```
+
+```bash
+kubectl describe storageclass standard
+```
+
+---
+
+## Apply StatefulSet
+
+```bash
+kubectl apply -f stateful-set.yaml
+```
+
+---
+
+## Check Pods
+
+```bash
+kubectl get pods
+```
+
+---
+
+## Check StatefulSet
+
+```bash
+kubectl get statefulset
+```
+
+or:
+
+```bash
+kubectl get sts
+```
+
+---
+
+## Check PVCs
+
+```bash
+kubectl get pvc
+```
+
+---
+
+## Check PVs
+
+```bash
+kubectl get pv
+```
+
+---
+
+## Inspect a Pod
+
+```bash
+kubectl describe pod demo-ss-0
+```
+
+Look for:
+
+```text
+Volumes:
+local-volume:
+  Type: PersistentVolumeClaim
+  ClaimName: ...
+```
+
+---
+
+## Check Minikube Storage
+
+```bash
+minikube ssh
+```
+
+```bash
+cd /tmp/hostpath-provisioner/default/
+```
+
+```bash
+ls
+```
+
+---
+
+## Delete StatefulSet
+
+```bash
+kubectl delete statefulset demo-ss
+```
+
+---
+
+## Verify PVCs
+
+```bash
+kubectl get pvc
+```
+
+The PVCs should still be there.
+
+---
+
+## Delete PVCs
+
+For this lab:
+
+```bash
+kubectl delete pvc --all
+```
+
+Or, safer:
+
+```bash
+kubectl delete pvc <pvc-name>
+```
+
+---
+
+## Verify PVs
+
+```bash
+kubectl get pv
+```
+
+Because the StorageClass uses `Delete`, the dynamically provisioned PVs should be cleaned up.
+
+---
+
+# 36. One Important Correction to Remember
+
+Don't think:
+
+> "Deleting the StatefulSet deletes the PVC and PV."
+
+Instead remember:
+
+```text
+Delete StatefulSet
+        ↓
+Pods deleted
+        ↓
+PVCs normally remain
+        ↓
+PV remains because PVC still exists
+```
+
+Then:
+
+```text
+Delete PVC
+        ↓
+StorageClass reclaim policy applies
+        ↓
+Delete policy
+        ↓
+PV + dynamically provisioned storage cleaned up
+```
+
+That distinction is **very important in Kubernetes interviews**.
+
+---
+
+# 37. Interview Questions
+
+### Q1. What changed when we moved from static to dynamic provisioning?
+
+We stopped manually creating PVs. The StatefulSet's PVC templates request storage from the `standard` StorageClass, and the provisioner automatically creates the required PVs and backing storage.
+
+### Q2. Why specify `storageClassName: standard` instead of relying on the default?
+
+It makes the StatefulSet explicit and predictable. If the cluster's default StorageClass changes later, the StatefulSet will still request `standard`.
+
+### Q3. Does deleting a StatefulSet delete its PVCs?
+
+No. StatefulSet deletion does not normally delete the PVCs created through `volumeClaimTemplates`.
+
+### Q4. What happens when we delete the PVC?
+
+With the `standard` StorageClass's `Delete` reclaim policy, the dynamically provisioned PV and its backing storage are cleaned up by the provisioner.
+
+### Q5. Why does each StatefulSet Pod get its own dynamically provisioned PV?
+
+Because each replica has its own PVC generated from `volumeClaimTemplates`. Each PVC independently requests storage, so the provisioner creates separate storage for each replica.
+
+### Q6. What is the complete dynamic-provisioning flow?
+
+```text
+StatefulSet
+    ↓
+volumeClaimTemplates
+    ↓
+PVC
+    ↓
+StorageClass
+    ↓
+Provisioner
+    ↓
+PV
+    ↓
+Actual Storage
+```
+
+**This is the key flow to remember for your interview.**
